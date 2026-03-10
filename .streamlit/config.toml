@@ -1,0 +1,20 @@
+[theme]
+# Use Streamlit's native dark mode as the foundation
+base = "dark"
+
+# A bold, professional yellow for primary actions
+primaryColor = "#FACC15"
+
+# Deep dark slate background
+backgroundColor = "#0F172A"
+
+# Slightly lighter slate for sidebars and input areas
+secondaryBackgroundColor = "#1E293B"
+
+# Crisp, readable off-white text
+textColor = "#F8FAFC"
+
+font = "sans serif"
+
+[server]
+maxUploadSize = 2000

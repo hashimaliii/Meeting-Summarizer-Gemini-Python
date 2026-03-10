@@ -1,0 +1,3 @@
+winget install Gyan.FFmpeg
+python -m pip install streamlit google-genai pydub
+python 3.10
