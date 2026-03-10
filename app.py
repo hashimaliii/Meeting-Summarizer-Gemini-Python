@@ -180,7 +180,7 @@ if st.session_state.detailed:
                                            ["Detailed Minutes", "Flash Report"], ["d", "c"]):
         with tab:
             c1, c2, c3 = st.columns(3)
-            c1.download_button("Word", create_docx(content, title), f"{title}.docx", key=f"{key_p}_w")
-            c2.download_button("PDF", create_pdf(content, title), f"{title}.pdf", key=f"{key_p}_p")
-            c3.download_button("Text", content.encode('utf-8'), f"{title}.txt", key=f"{key_p}_t")
+            c1.download_button("Download Word", create_docx(content, title), f"{title}.docx", key=f"{key_p}_w")
+            c2.download_button("Download PDF", create_pdf(content, title), f"{title}.pdf", key=f"{key_p}_p")
+            c3.download_button("Download Text", content.encode('utf-8'), f"{title}.txt", key=f"{key_p}_t")
             st.markdown(f'<div class="document-card">{content}</div>', unsafe_allow_html=True)
