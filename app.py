@@ -166,7 +166,7 @@ if uploaded_files and st.button("Generate Master Report"):
         # Explicit date instruction
         date_instr = f"MANDATORY: Today is {current_date_val}. Replace all [Current Date] placeholders."
         
-        res_det = client.models.generate_content(model=GEMINI_MODEL, contents=[date_instr, PROF_PROMPT, "\n\n".join(all_context)])
+        res_det = client.models.generate_content(model=GEMINI_MODEL, contents=[date_instr, PROFESSIONAL_PROMPT, "\n\n".join(all_context)])
         st.session_state.detailed = res_det.text
         
         res_con = client.models.generate_content(model=GEMINI_MODEL, contents=[date_instr, CONCISE_PROMPT, res_det.text])
