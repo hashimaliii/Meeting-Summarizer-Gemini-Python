@@ -155,14 +155,14 @@ if uploaded_files and st.button("Merge & Generate Minutes"):
         
         # 1. Detailed Pass
         res_det = client.models.generate_content(
-            model='gemini-2.0-flash',
+            model=GEMINI_MODEL,
             contents=f"{PROFESSIONAL_PROMPT}\n\nCOMBINED DATA:\n{master_data}"
         )
         st.session_state.detailed = res_det.text
         
         # 2. Concise Pass
         res_con = client.models.generate_content(
-            model='gemini-2.0-flash',
+            model=GEMINI_MODEL,
             contents=f"{CONCISE_PROMPT}\n\nBASED ON THESE MINUTES:\n{res_det.text}"
         )
         st.session_state.concise = res_con.text
