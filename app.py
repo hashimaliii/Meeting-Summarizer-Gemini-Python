@@ -200,7 +200,7 @@ if "concise" not in st.session_state: st.session_state.concise = None
 uploaded_files = st.file_uploader("Upload Audio (Breakout Sessions) or Notes (TXT)", type=['mp3', 'wav', 'm4a', 'txt'], accept_multiple_files=True)
 
 # THE GENERATE BUTTON - Brought back to primary placement
-if uploaded_files and st.button("Generate Both Documents", key="primary_gen_btn"):
+if uploaded_files and st.button("Generate Documents", key="primary_gen_btn"):
     all_context = []
     
     for f in uploaded_files:
