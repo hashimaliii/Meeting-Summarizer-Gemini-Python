@@ -10,11 +10,11 @@ from dotenv import load_dotenv
 from pydub import AudioSegment
 from google import genai
 
-# 1. Environment and Date Setup
+# 1. Environment & Date Logic
 load_dotenv()
 client = genai.Client()
 
-# This variable is used to force-replace [Current Date] in the AI output
+# System date to replace [Current Date] placeholders
 current_date_str = datetime.now().strftime("%B %d, %Y")
 
 # Fetch the system prompt from the .env file
@@ -47,18 +47,19 @@ List all formal decisions and agreements reached.
 List any topics tabled for future meetings, or the agreed-upon date for the next follow-up.
 """)
 
-# --- ROBUST PDF EXPORTER ---
+# --- EXPORT ENGINES ---
+
 def create_pdf(text, title="Official Document"):
+    """Fixed PDF engine: Strips Markdown and uses multi_cell to prevent fragmentation."""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
-    # Header logic
     pdf.set_font("Helvetica", 'B', 16)
     pdf.cell(190, 10, title, ln=True, align='C')
     pdf.ln(10)
 
-    # Sanitize text for Latin-1 (removes smart quotes/em-dashes)
+    # Sanitize for Latin-1 and strip fragmentation-causing characters
     text = text.replace('‘', "'").replace('’', "'").replace('“', '"').replace('”', '"').replace('–', '-')
     text = "".join(i for i in text if ord(i) < 256)
 
@@ -69,110 +70,92 @@ def create_pdf(text, title="Official Document"):
             pdf.ln(4)
             continue
         
-        # CRITICAL FIX: Strip Markdown symbols (**, #)
-        # These symbols cause the PDF engine to miscalculate line width, leading to trimmed text.
+        # Strip Markdown (** and #) that breaks horizontal alignment in FPDF
         clean_line = line.replace('**', '').replace('#', '').strip()
-        
         if clean_line:
             try:
+                # multi_cell ensures text wraps correctly within margins
                 pdf.multi_cell(w=190, h=7, txt=clean_line, border=0, align='L')
-            except Exception:
+            except:
                 continue
-                
     return bytes(pdf.output())
 
-# --- AUDIO CHUNKING ENGINE ---
-def process_audio(file_obj):
-    ext = file_obj.name.split('.')[-1].lower()
-    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as tmp:
-        tmp.write(file_obj.read())
-        path = tmp.name
-    
-    try:
-        audio = AudioSegment.from_file(path)
-        chunk_ms = 45 * 60 * 1000 # 45-minute chunks for Gemini
-        chunks_count = math.ceil(len(audio) / chunk_ms)
-        summaries = []
-        
-        for i in range(chunks_count):
-            chunk = audio[i*chunk_ms : min((i+1)*chunk_ms, len(audio))]
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as c_tmp:
-                chunk.export(c_tmp.name, format="mp3")
-                g_file = client.files.upload(file=c_tmp.name)
-                res = client.models.generate_content(
-                    model=GEMINI_MODEL,
-                    contents=["Provide a highly detailed transcript summary for this segment.", g_file]
-                )
-                summaries.append(res.text)
-                client.files.delete(name=g_file.name)
-                os.remove(c_tmp.name)
-        return "\n".join(summaries)
-    finally:
-        if os.path.exists(path): os.remove(path)
+def create_docx(text, title="Meeting Minutes"):
+    """Generates professional Word document."""
+    doc = Document()
+    doc.add_heading(title, 0)
+    for line in text.split('\n'):
+        line = line.strip()
+        if line:
+            doc.add_paragraph(line.replace('**', '').replace('#', '').strip())
+    bio = io.BytesIO()
+    doc.save(bio)
+    return bio.getvalue()
 
-# --- UI CONFIG & CSS ---
+def create_txt(text):
+    """Generates simple clean text file."""
+    clean_text = text.replace('**', '').replace('# ', '')
+    return clean_text.encode('utf-8')
+
+# --- UI STYLING ---
 st.set_page_config(page_title="Minutes AI Pro", layout="centered")
 
 st.markdown(f"""
     <style>
     .stApp {{ background-color: #0F172A; color: #F8FAFC; }}
     
-    /* Removes 'Ghost Boxes' by hiding empty Streamlit containers */
+    /* Remove ghost boxes and empty containers */
     [data-testid="stVerticalBlock"] > div:empty {{ display: none !important; }}
 
     div.stButton > button {{ 
         background-color: #FACC15 !important; 
         color: #0F172A !important; 
-        font-weight: 700; width: 100%; border: none; padding: 12px; border-radius: 8px;
+        font-weight: 700; width: 100%; border-radius: 8px; padding: 12px;
     }}
     
-    .stTabs [data-baseweb="tab-list"] {{ border-bottom: 1px solid #334155; gap: 20px; }}
-    .stTabs [aria-selected="true"] {{ color: #FACC15 !important; border-bottom: 2px solid #FACC15 !important; font-weight: bold; }}
-    .stTabs [data-baseweb="tab-highlight"] {{ display: none !important; }}
+    .stTabs [data-baseweb="tab-list"] {{ border-bottom: 1px solid #334155; }}
+    .stTabs [aria-selected="true"] {{ color: #FACC15 !important; border-bottom: 2px solid #FACC15 !important; }}
 
     .document-card {{ 
         background-color: #1E293B; 
         padding: 2.5rem; 
         border-radius: 12px; 
-        margin-top: 1.5rem;
-        line-height: 1.6;
-        color: #E2E8F0;
+        margin-top: 1rem;
+        color: #E2E8F0; 
     }}
+    
+    /* Style for the top-row download buttons */
+    .download-row {{ margin-bottom: 20px; }}
     </style>
 """, unsafe_allow_html=True)
 
-# --- APP LAYOUT ---
+# --- APP INTERFACE ---
 st.title("Minutes AI: Multi-Source Synthesis")
-st.write(f"Today's System Date: **{current_date_str}**")
+st.write(f"Meeting Context Date: **{current_date_str}**")
 
 if "detailed" not in st.session_state: st.session_state.detailed = None
 if "concise" not in st.session_state: st.session_state.concise = None
 
-uploaded_files = st.file_uploader("Upload Audio or Text Assets", type=['mp3', 'wav', 'm4a', 'txt'], accept_multiple_files=True)
+uploaded_files = st.file_uploader("Upload Audio or Text Assets", type=['mp3', 'wav', 'txt'], accept_multiple_files=True)
 
-# The Generate Button
-if uploaded_files and st.button("Generate Both Documents"):
+if uploaded_files and st.button("Merge & Generate Minutes"):
     all_context = []
-    
     for f in uploaded_files:
-        with st.spinner(f"Processing {f.name}..."):
-            if f.name.endswith('.txt'):
-                all_context.append(f.read().decode("utf-8"))
-            else:
-                all_context.append(process_audio(f))
+        if f.name.endswith('.txt'):
+            all_context.append(f"Source ({f.name}):\n" + f.read().decode("utf-8"))
     
     with st.spinner("Synthesizing final documents..."):
-        # MANDATORY DATE INJECTION
-        date_instr = f"MANDATORY: Use '{current_date_str}' as the meeting date. Replace all [Current Date] placeholders with this value."
+        # FORCE date injection
+        date_instr = f"MANDATORY: Use '{current_date_str}' as the meeting date. Do not use placeholders."
         
-        # 1. Detailed Minutes
+        # Detailed pass
         res_det = client.models.generate_content(
             model=GEMINI_MODEL,
             contents=[date_instr, PROFESSIONAL_PROMPT, "\n\n".join(all_context)]
         )
         st.session_state.detailed = res_det.text
         
-        # 2. Flash Report
+        # Concise pass
         res_con = client.models.generate_content(
             model=GEMINI_MODEL,
             contents=[date_instr, CONCISE_PROMPT, res_det.text]
@@ -180,14 +163,30 @@ if uploaded_files and st.button("Generate Both Documents"):
         st.session_state.concise = res_con.text
     st.success("Analysis Complete!")
 
-# RESULTS VIEW
+# --- DISPLAY WITH TOP BUTTONS ---
 if st.session_state.detailed:
-    t1, t2 = st.tabs(["Detailed Master Minutes", "Executive Flash Report"])
+    t1, t2 = st.tabs(["Detailed Minutes", "Executive Flash Report"])
     
     with t1:
-        st.markdown(f'<div class="document-card">{st.session_state.detailed}</div>', unsafe_allow_html=True)
-        st.download_button("Download Detailed PDF", create_pdf(st.session_state.detailed, "Detailed Minutes"), "Detailed.pdf")
+        # BUTTONS AT TOP
+        st.markdown('<div class="download-row">', unsafe_allow_html=True)
+        c1, c2, c3 = st.columns(3)
+        c1.download_button("Download PDF", create_pdf(st.session_state.detailed, "Detailed Minutes"), "Detailed.pdf", key="pdf_det")
+        c2.download_button("Download Word", create_docx(st.session_state.detailed, "Detailed Minutes"), "Detailed.docx", key="word_det")
+        c3.download_button("Download Text", create_txt(st.session_state.detailed), "Detailed.txt", key="txt_det")
+        st.markdown('</div>', unsafe_allow_html=True)
         
+        # DOCUMENT CONTENT
+        st.markdown(f'<div class="document-card">{st.session_state.detailed}</div>', unsafe_allow_html=True)
+
     with t2:
+        # BUTTONS AT TOP
+        st.markdown('<div class="download-row">', unsafe_allow_html=True)
+        c1, c2, c3 = st.columns(3)
+        c1.download_button("Download PDF", create_pdf(st.session_state.concise, "Flash Report"), "FlashReport.pdf", key="pdf_con")
+        c2.download_button("Download Word", create_docx(st.session_state.concise, "Flash Report"), "FlashReport.docx", key="word_con")
+        c3.download_button("Download Text", create_txt(st.session_state.concise), "FlashReport.txt", key="txt_con")
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # DOCUMENT CONTENT
         st.markdown(f'<div class="document-card">{st.session_state.concise}</div>', unsafe_allow_html=True)
-        st.download_button("Download Flash Report PDF", create_pdf(st.session_state.concise, "Flash Report"), "FlashReport.pdf")
