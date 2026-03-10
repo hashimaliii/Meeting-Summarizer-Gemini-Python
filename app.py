@@ -3,6 +3,7 @@ import tempfile
 import os
 import io
 import math
+from datetime import datetime
 from docx import Document
 from fpdf import FPDF
 from dotenv import load_dotenv
@@ -13,6 +14,9 @@ from google.genai import types
 # 1. Setup
 load_dotenv()
 client = genai.Client()
+
+# Get dynamic date
+current_date = datetime.now().strftime("%B %d, %Y")
 
 # Fetch the system prompt from the .env file
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
@@ -44,7 +48,6 @@ List all formal decisions and agreements reached.
 List any topics tabled for future meetings, or the agreed-upon date for the next follow-up.
 """)
 
-
 # --- STABLE PDF EXPORTER ---
 def create_pdf(text, title="Official Document"):
     pdf = FPDF()
@@ -72,7 +75,6 @@ def create_pdf(text, title="Official Document"):
             pdf.multi_cell(w=effective_width, h=6, txt=clean_line)
         except:
             continue
-            
     return bytes(pdf.output())
 
 def create_docx(text, title="Meeting Minutes"):
@@ -87,7 +89,6 @@ def create_docx(text, title="Meeting Minutes"):
 
 # --- PROCESSING ENGINES ---
 def get_audio_summary(file_obj):
-    """Chunks and summarizes a single audio file."""
     ext = file_obj.name.split('.')[-1].lower()
     with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as tmp:
         tmp.write(file_obj.read())
@@ -118,132 +119,110 @@ def get_audio_summary(file_obj):
 # --- UI CONFIG ---
 st.set_page_config(page_title="Minutes AI Pro", layout="centered")
 
-# --- UI CONFIG ---
-st.set_page_config(page_title="Minutes AI Pro", layout="centered")
-
-st.markdown("""
+st.markdown(f"""
     <style>
-    /* Main App Background */
-    .stApp { background-color: #0F172A; color: #F8FAFC; }
+    .stApp {{ background-color: #0F172A; color: #F8FAFC; }}
     
-    /* Buttons */
-    div.stButton > button { 
+    /* Hide empty Streamlit blocks that cause "ghost boxes" */
+    [data-testid="stVerticalBlock"] > div:empty {{ display: none !important; }}
+
+    div.stButton > button {{ 
         background-color: #FACC15 !important; 
         color: #0F172A !important; 
-        font-weight: 700; 
-        width: 100%; 
-        border: none; 
-        padding: 10px; 
-        border-radius: 8px;
-    }
+        font-weight: 700; width: 100%; border: none; padding: 10px; border-radius: 8px;
+    }}
     
-    /* Clean Tab Styling */
-    .stTabs [data-baseweb="tab-list"] {
+    /* Clean Tab Headers */
+    .stTabs [data-baseweb="tab-list"] {{
         gap: 24px;
         background-color: transparent;
-    }
+        border-bottom: 1px solid #334155;
+    }}
 
-    .stTabs [data-baseweb="tab"] {
+    .stTabs [data-baseweb="tab"] {{
         height: 50px;
         background-color: transparent !important;
         border: none !important;
-        color: #94A3B8 !important; /* Muted text for inactive tabs */
-        font-weight: 400;
-        font-size: 16px;
-    }
+        color: #94A3B8 !important;
+    }}
 
-    /* Selected Tab - Simple Yellow Underline */
-    .stTabs [aria-selected="true"] {
+    .stTabs [aria-selected="true"] {{
         color: #FACC15 !important;
         font-weight: 700 !important;
         border-bottom: 2px solid #FACC15 !important;
-    }
+    }}
 
-    /* Remove the default long yellow bar underline */
-    .stTabs [data-baseweb="tab-highlight"] {
-        background-color: transparent !important;
-    }
+    .stTabs [data-baseweb="tab-highlight"] {{
+        display: none !important;
+    }}
 
-    /* Document Card */
-    .document-card { 
+    /* Consolidated Document Card */
+    .document-card {{ 
         background-color: #1E293B; 
-        border: 1px solid #334155;
         padding: 25px; 
         border-radius: 12px; 
-        margin-top: 10px;
+        margin-top: 20px;
         color: #E2E8F0; 
         line-height: 1.6;
-    }
+        border: none;
+    }}
     
-    /* Download Buttons Styling */
-    .stDownloadButton button {
+    .stDownloadButton button {{
         background-color: transparent !important;
         color: #FACC15 !important;
         border: 1px solid #FACC15 !important;
-    }
-    .stDownloadButton button:hover {
-        background-color: rgba(250, 204, 21, 0.1) !important;
-    }
+    }}
     </style>
 """, unsafe_allow_html=True)
 
 st.title("Minutes AI: Multi-Source Synthesis")
-st.write("Upload multiple **Audio (MP3/WAV)** and **Text (TXT)** files to merge them into one master report.")
+st.write(f"Today's Date: **{current_date}**")
 
 if "detailed" not in st.session_state: st.session_state.detailed = None
 if "concise" not in st.session_state: st.session_state.concise = None
 
-# Allow multiple file uploads
 uploaded_files = st.file_uploader("Upload all meeting assets", type=['mp3', 'wav', 'm4a', 'txt'], accept_multiple_files=True)
 
 if uploaded_files and st.button("Merge & Generate Minutes"):
     all_context = []
-    
     for f in uploaded_files:
         with st.spinner(f"Processing {f.name}..."):
             if f.name.endswith('.txt'):
                 content = f.read().decode("utf-8")
-                all_chunks = f"SOURCE FILE ({f.name}):\n{content}"
-                all_context.append(all_chunks)
+                all_context.append(f"SOURCE FILE ({f.name}):\n{content}")
             else:
                 summary = get_audio_summary(f)
                 all_context.append(f"AUDIO SOURCE ({f.name}):\n{summary}")
     
-    # Final Synthesis
-    with st.spinner("Merging all sources into Master Minutes..."):
+    with st.spinner("Merging into Master Minutes..."):
         master_data = "\n\n--- NEW SOURCE BLOCK ---\n\n".join(all_context)
         
-        # 1. Detailed Pass
+        # Pass the real current date into the prompt
         res_det = client.models.generate_content(
             model=GEMINI_MODEL,
-            contents=f"{PROFESSIONAL_PROMPT}\n\nCOMBINED DATA:\n{master_data}"
+            contents=f"Today's Date: {current_date}\n\n{PROFESSIONAL_PROMPT}\n\nCOMBINED DATA:\n{master_data}"
         )
         st.session_state.detailed = res_det.text
         
-        # 2. Concise Pass
         res_con = client.models.generate_content(
             model=GEMINI_MODEL,
-            contents=f"{CONCISE_PROMPT}\n\nBASED ON THESE MINUTES:\n{res_det.text}"
+            contents=f"Today's Date: {current_date}\n\n{CONCISE_PROMPT}\n\nBASED ON THESE MINUTES:\n{res_det.text}"
         )
         st.session_state.concise = res_con.text
     st.success("All sources merged and processed!")
 
-# UI DISPLAY
+# UI DISPLAY - Fixed "Ghost Box" by wrapping inside the Div properly
 if st.session_state.detailed:
     t1, t2 = st.tabs(["Detailed Master Minutes", "Executive Flash Report"])
     
     with t1:
-        st.markdown('<div class="document-card">', unsafe_allow_html=True)
-        st.markdown(st.session_state.detailed)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="document-card">{st.session_state.detailed}</div>', unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         c1.download_button("Download Detailed (PDF)", create_pdf(st.session_state.detailed, "Detailed Minutes"), "Detailed.pdf")
         c2.download_button("Download Detailed (Word)", create_docx(st.session_state.detailed, "Detailed Minutes"), "Detailed.docx")
 
     with t2:
-        st.markdown('<div class="document-card" style="border-top-color: #EAB308;">', unsafe_allow_html=True)
-        st.markdown(st.session_state.concise)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="document-card">{st.session_state.concise}</div>', unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         c1.download_button("Download Concise (PDF)", create_pdf(st.session_state.concise, "Flash Report"), "Concise.pdf")
         c2.download_button("Download Concise (Word)", create_docx(st.session_state.concise, "Flash Report"), "Concise.docx")
