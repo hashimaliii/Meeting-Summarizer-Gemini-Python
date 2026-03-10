@@ -5,7 +5,10 @@ import io
 import math
 from datetime import datetime
 from docx import Document
-from fpdf import FPDF
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
 from PyPDF2 import PdfReader
 from dotenv import load_dotenv
 from pydub import AudioSegment
@@ -96,30 +99,38 @@ def process_audio(file_obj):
 # --- HARDENED EXPORT ENGINES (FIXES TRUNCATION) ---
 
 def create_pdf(text, title="Official Document"):
-    """Uses multi_cell to prevent word truncation and strips Markdown."""
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.set_font("Helvetica", 'B', 16)
-    pdf.cell(190, 10, title, ln=True, align='C')
-    pdf.ln(10)
+    """Uses reportlab with proper margins and text wrapping to prevent truncation."""
 
-    # Sanitize and strip formatting that causes fragmentation
-    text = text.replace('‘', "'").replace('’', "'").replace('“', '"').replace('”', '"').replace('–', '-')
-    text = "".join(i for i in text if ord(i) < 256)
-    
-    pdf.set_font("Helvetica", size=11)
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=letter,
+        leftMargin=inch, rightMargin=inch,
+        topMargin=inch, bottomMargin=inch
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('DocTitle', parent=styles['Title'], fontSize=16, spaceAfter=16)
+    heading_style = ParagraphStyle('DocHeading', parent=styles['Heading2'], fontSize=13, spaceBefore=10, spaceAfter=6)
+    body_style = ParagraphStyle('DocBody', parent=styles['Normal'], fontSize=11, leading=16, spaceAfter=4)
+    bullet_style = ParagraphStyle('DocBullet', parent=styles['Normal'], fontSize=11, leading=16, leftIndent=20, spaceAfter=4)
+
+    story = [Paragraph(title, title_style), Spacer(1, 6)]
+
     for line in text.split('\n'):
-        line = line.strip().replace('**', '').replace('#', '')
-        if not line:
-            pdf.ln(4)
+        clean = line.strip().replace('**', '').replace('*', '')
+        clean = clean.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        clean_text = clean.lstrip('#').strip()
+        if not clean_text:
+            story.append(Spacer(1, 6))
             continue
-        try:
-            # Fixes truncation seen in Detailed.pdf
-            pdf.multi_cell(w=190, h=7, txt=line, border=0, align='L')
-        except:
-            continue
-    return bytes(pdf.output())
+        if clean.startswith(('#',)):
+            story.append(Paragraph(clean_text, heading_style))
+        elif clean_text.startswith('-') or clean_text.startswith('\u2022'):
+            story.append(Paragraph(clean_text[1:].strip(), bullet_style))
+        else:
+            story.append(Paragraph(clean_text, body_style))
+
+    doc.build(story)
+    return buf.getvalue()
 
 def create_docx(text, title="Meeting Minutes"):
     doc = Document()
