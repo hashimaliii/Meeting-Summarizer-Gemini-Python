@@ -2,19 +2,15 @@ import streamlit as st
 import tempfile
 import os
 import io
-import math
 from datetime import datetime
 from docx import Document
 from fpdf import FPDF
 from dotenv import load_dotenv
-from pydub import AudioSegment
 from google import genai
 
-# 1. Environment & Date Logic
+# 1. Setup & Contextual Date Injection
 load_dotenv()
 client = genai.Client()
-
-# System date to replace [Current Date] placeholders
 current_date_str = datetime.now().strftime("%B %d, %Y")
 
 # Fetch the system prompt from the .env file
@@ -47,19 +43,23 @@ List all formal decisions and agreements reached.
 List any topics tabled for future meetings, or the agreed-upon date for the next follow-up.
 """)
 
-# --- EXPORT ENGINES ---
+# --- ENHANCED EXPORT ENGINES ---
 
 def create_pdf(text, title="Official Document"):
-    """Fixed PDF engine: Strips Markdown and uses multi_cell to prevent fragmentation."""
+    """
+    FIXED PDF ENGINE: Uses multi_cell with explicit width to prevent truncation.
+    Strips Markdown bolding and headers that confuse FPDF width calculations.
+    """
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
+    # Title Header
     pdf.set_font("Helvetica", 'B', 16)
     pdf.cell(190, 10, title, ln=True, align='C')
     pdf.ln(10)
 
-    # Sanitize for Latin-1 and strip fragmentation-causing characters
+    # Sanitize for Latin-1 and remove formatting artifacts
     text = text.replace('‘', "'").replace('’', "'").replace('“', '"').replace('”', '"').replace('–', '-')
     text = "".join(i for i in text if ord(i) < 256)
 
@@ -70,18 +70,19 @@ def create_pdf(text, title="Official Document"):
             pdf.ln(4)
             continue
         
-        # Strip Markdown (** and #) that breaks horizontal alignment in FPDF
+        # Strip Markdown characters to ensure correct width calculation
         clean_line = line.replace('**', '').replace('#', '').strip()
+        
         if clean_line:
             try:
-                # multi_cell ensures text wraps correctly within margins
+                # 190mm is standard width for A4 with margins; multi_cell handles wrapping
                 pdf.multi_cell(w=190, h=7, txt=clean_line, border=0, align='L')
             except:
                 continue
     return bytes(pdf.output())
 
 def create_docx(text, title="Meeting Minutes"):
-    """Generates professional Word document."""
+    """Creates professional Word document without formatting artifacts."""
     doc = Document()
     doc.add_heading(title, 0)
     for line in text.split('\n'):
@@ -93,18 +94,17 @@ def create_docx(text, title="Meeting Minutes"):
     return bio.getvalue()
 
 def create_txt(text):
-    """Generates simple clean text file."""
-    clean_text = text.replace('**', '').replace('# ', '')
-    return clean_text.encode('utf-8')
+    """Clean text export."""
+    return text.replace('**', '').replace('# ', '').encode('utf-8')
 
-# --- UI STYLING ---
+# --- UI CONFIGURATION ---
 st.set_page_config(page_title="Minutes AI Pro", layout="centered")
 
 st.markdown(f"""
     <style>
     .stApp {{ background-color: #0F172A; color: #F8FAFC; }}
     
-    /* Remove ghost boxes and empty containers */
+    /* Suppress ghost UI artifacts */
     [data-testid="stVerticalBlock"] > div:empty {{ display: none !important; }}
 
     div.stButton > button {{ 
@@ -123,70 +123,59 @@ st.markdown(f"""
         margin-top: 1rem;
         color: #E2E8F0; 
     }}
-    
-    /* Style for the top-row download buttons */
-    .download-row {{ margin-bottom: 20px; }}
     </style>
 """, unsafe_allow_html=True)
 
-# --- APP INTERFACE ---
-st.title("Minutes AI: Multi-Source Synthesis")
+# --- MAIN APP ---
+st.title("Minutes AI: Document Synthesis")
 st.write(f"Meeting Context Date: **{current_date_str}**")
 
 if "detailed" not in st.session_state: st.session_state.detailed = None
 if "concise" not in st.session_state: st.session_state.concise = None
 
-uploaded_files = st.file_uploader("Upload Audio or Text Assets", type=['mp3', 'wav', 'txt'], accept_multiple_files=True)
+files = st.file_uploader("Upload Notes (TXT)", type=['txt'], accept_multiple_files=True)
 
-if uploaded_files and st.button("Merge & Generate Minutes"):
+if files and st.button("Generate Minutes & Flash Report"):
     all_context = []
-    for f in uploaded_files:
-        if f.name.endswith('.txt'):
-            all_context.append(f"Source ({f.name}):\n" + f.read().decode("utf-8"))
+    for f in files:
+        all_context.append(f.read().decode("utf-8"))
     
-    with st.spinner("Synthesizing final documents..."):
-        # FORCE date injection
-        date_instr = f"MANDATORY: Use '{current_date_str}' as the meeting date. Do not use placeholders."
+    with st.spinner("Synthesizing..."):
+        # Explicit date injection to fix [Current Date] placeholder
+        date_instr = f"MANDATORY: Use '{current_date_str}' as the actual meeting date."
         
-        # Detailed pass
+        # Detailed synthesis
         res_det = client.models.generate_content(
             model=GEMINI_MODEL,
             contents=[date_instr, PROFESSIONAL_PROMPT, "\n\n".join(all_context)]
         )
         st.session_state.detailed = res_det.text
         
-        # Concise pass
+        # Concise report
         res_con = client.models.generate_content(
             model=GEMINI_MODEL,
             contents=[date_instr, CONCISE_PROMPT, res_det.text]
         )
         st.session_state.concise = res_con.text
-    st.success("Analysis Complete!")
+    st.success("Documents Ready!")
 
-# --- DISPLAY WITH TOP BUTTONS ---
+# --- DISPLAY WITH TOP EXPORT BUTTONS ---
 if st.session_state.detailed:
     t1, t2 = st.tabs(["Detailed Minutes", "Executive Flash Report"])
     
     with t1:
-        # BUTTONS AT TOP
-        st.markdown('<div class="download-row">', unsafe_allow_html=True)
+        # Export buttons at top to prevent scrolling
         c1, c2, c3 = st.columns(3)
-        c1.download_button("Download PDF", create_pdf(st.session_state.detailed, "Detailed Minutes"), "Detailed.pdf", key="pdf_det")
-        c2.download_button("Download Word", create_docx(st.session_state.detailed, "Detailed Minutes"), "Detailed.docx", key="word_det")
-        c3.download_button("Download Text", create_txt(st.session_state.detailed), "Detailed.txt", key="txt_det")
-        st.markdown('</div>', unsafe_allow_html=True)
+        c1.download_button("Download PDF", create_pdf(st.session_state.detailed, "Detailed Minutes"), "Detailed.pdf", key="d_pdf")
+        c2.download_button("Download Word", create_docx(st.session_state.detailed, "Detailed Minutes"), "Detailed.docx", key="d_word")
+        c3.download_button("Download Text", create_txt(st.session_state.detailed), "Detailed.txt", key="d_txt")
         
-        # DOCUMENT CONTENT
         st.markdown(f'<div class="document-card">{st.session_state.detailed}</div>', unsafe_allow_html=True)
 
     with t2:
-        # BUTTONS AT TOP
-        st.markdown('<div class="download-row">', unsafe_allow_html=True)
         c1, c2, c3 = st.columns(3)
-        c1.download_button("Download PDF", create_pdf(st.session_state.concise, "Flash Report"), "FlashReport.pdf", key="pdf_con")
-        c2.download_button("Download Word", create_docx(st.session_state.concise, "Flash Report"), "FlashReport.docx", key="word_con")
-        c3.download_button("Download Text", create_txt(st.session_state.concise), "FlashReport.txt", key="txt_con")
-        st.markdown('</div>', unsafe_allow_html=True)
+        c1.download_button("Download PDF", create_pdf(st.session_state.concise, "Flash Report"), "FlashReport.pdf", key="c_pdf")
+        c2.download_button("Download Word", create_docx(st.session_state.concise, "Flash Report"), "FlashReport.docx", key="c_word")
+        c3.download_button("Download Text", create_txt(st.session_state.concise), "FlashReport.txt", key="c_txt")
         
-        # DOCUMENT CONTENT
         st.markdown(f'<div class="document-card">{st.session_state.concise}</div>', unsafe_allow_html=True)
