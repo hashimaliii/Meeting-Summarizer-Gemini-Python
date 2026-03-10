@@ -155,8 +155,8 @@ CSS = """
     --red-dark:  #B20710;
     --bg:        #141414;
     --surface:   #1f1f1f;
-    --surface2:  #262626;
-    --surface3:  #333;
+    --surface2:  #1a1a1a;
+    --surface3:  #2a2a2a;
     --border:    rgba(255,255,255,0.07);
     --border2:   rgba(255,255,255,0.13);
     --text:      #e5e5e5;
@@ -175,7 +175,6 @@ html, body, [class*="css"] {
     color: var(--text) !important;
 }
 
-/* Remove Streamlit default padding so we control layout */
 .block-container {
     padding: 0 !important;
     max-width: 100% !important;
@@ -198,8 +197,8 @@ section[data-testid="stSidebar"] { display: none !important; }
 /* ── NAVBAR ── */
 .nf-nav {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 0 2.5rem;
-    height: 58px;
+    padding: 0 1.25rem;
+    height: 52px;
     background: rgba(14,14,14,0.97);
     border-bottom: 1px solid var(--border);
     position: sticky; top: 0; z-index: 999;
@@ -207,124 +206,129 @@ section[data-testid="stSidebar"] { display: none !important; }
 }
 .nf-logo {
     font-family: 'Bebas Neue', sans-serif;
-    font-size: 1.65rem; letter-spacing: .06em;
+    font-size: 1.5rem; letter-spacing: .06em;
     color: var(--red);
     text-shadow: 0 2px 12px rgba(229,9,20,.35);
     line-height: 1;
 }
 .nf-logo span {
-    color: rgba(255,255,255,.8); font-size: .72rem;
+    color: rgba(255,255,255,.8); font-size: .68rem;
     letter-spacing: .2em; margin-left: .4rem;
     font-family: 'Barlow', sans-serif; font-weight: 600;
     text-shadow: none; vertical-align: middle;
 }
-.nf-nav-right { display:flex; align-items:center; gap:1rem; }
-.nf-date  { font-size:.75rem; color:var(--text-dim); font-weight:500; }
+.nf-nav-right { display:flex; align-items:center; gap:.75rem; }
+.nf-date  { font-size:.72rem; color:var(--text-dim); font-weight:500; }
 .nf-pill  {
-    font-size:.6rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+    font-size:.58rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
     color:var(--white); background:var(--red);
-    padding:.22rem .65rem; border-radius:2px;
+    padding:.2rem .55rem; border-radius:2px;
 }
 
 /* ── TICKER ── */
 .nf-ticker {
     background: rgba(0,0,0,.55);
     border-bottom: 1px solid var(--border);
-    padding: .38rem 0; overflow: hidden;
+    padding: .32rem 0; overflow: hidden;
 }
 .nf-ticker-track { display:flex; width:max-content; animation: ticker 28s linear infinite; }
 .nf-ticker-item  {
-    white-space:nowrap; font-size:.62rem; font-weight:700;
+    white-space:nowrap; font-size:.6rem; font-weight:700;
     letter-spacing:.12em; text-transform:uppercase;
-    color:var(--text-muted); padding:0 2.5rem;
+    color:var(--text-muted); padding:0 2rem;
 }
 .nf-ticker-item b { color:var(--red); margin-right:.4rem; }
 
-/* ── MAIN COLUMNS WRAPPER ── */
-.main-wrap {
-    display: flex;
-    height: calc(100vh - 84px);   /* full height minus nav+ticker */
+/* ── STREAMLIT COLUMNS: fill viewport height below nav+ticker ── */
+[data-testid="stHorizontalBlock"] {
+    height: calc(100vh - 78px) !important;
+    align-items: stretch !important;
+    gap: 0 !important;
+}
+[data-testid="stHorizontalBlock"] > div {
+    height: 100% !important;
+    overflow: hidden !important;
 }
 
-/* ── LEFT PANEL ── */
+/* ── LEFT COLUMN (Streamlit) ── */
+[data-testid="stHorizontalBlock"] > div:first-child {
+    border-right: 1px solid var(--border) !important;
+    background: linear-gradient(180deg, #0d0d0d 0%, #141414 100%) !important;
+    overflow-y: auto !important;
+}
+
+/* ── RIGHT COLUMN (Streamlit) ── */
+[data-testid="stHorizontalBlock"] > div:last-child {
+    overflow-y: auto !important;
+}
+
+/* ── LEFT PANEL INNER ── */
 .left-col {
-    width: 715px;
-    min-width: 320px;
-    flex-shrink: 0;
-    background: linear-gradient(180deg, #0d0d0d 0%, #141414 100%);
-    border-right: 1px solid var(--border);
-    padding: 5rem 1.75rem;
+    padding: 1.75rem 1.5rem 1.25rem;
     display: flex; flex-direction: column;
     position: relative; overflow: hidden;
     animation: fadeUp .5s cubic-bezier(.22,1,.36,1) .08s both;
+    height: 100%;
+    box-sizing: border-box;
 }
 .left-col::before {
     content:''; position:absolute;
-    width:350px; height:350px;
+    width:280px; height:280px;
     background:radial-gradient(circle, rgba(229,9,20,.08) 0%, transparent 70%);
-    top:-80px; left:-80px;
+    top:-60px; left:-60px;
     animation: glowred 5s ease-in-out infinite; pointer-events:none;
 }
 
 .panel-eyebrow {
     font-size:.58rem; font-weight:700; letter-spacing:.18em; text-transform:uppercase;
-    color:var(--red); margin-bottom:5rem;
+    color:var(--red); margin-bottom:1.2rem;
     display:flex; align-items:center; gap:.5rem;
 }
 .panel-eyebrow::before { content:''; width:20px; height:2px; background:var(--red); display:block; }
 
 .panel-title {
     font-family:'Bebas Neue', sans-serif;
-    font-size:2.6rem; font-weight:400; line-height:.92;
-    color:var(--white); letter-spacing:.02em; margin-bottom:.65rem;
+    font-size:clamp(1.8rem, 3vw, 2.6rem); font-weight:400; line-height:.92;
+    color:var(--white); letter-spacing:.02em; margin-bottom:.55rem;
 }
 .panel-title em { color:var(--red); font-style:normal; }
 
 .panel-desc {
-    font-size:.82rem; color:var(--text-dim); line-height:1.55;
-    margin-bottom:1.25rem; font-weight:400;
+    font-size:.8rem; color:var(--text-dim); line-height:1.55;
+    margin-bottom:1rem; font-weight:400;
 }
 
-.fmt-row { display:flex; gap:.35rem; flex-wrap:wrap; margin-bottom:1.25rem; }
+.fmt-row { display:flex; gap:.3rem; flex-wrap:wrap; margin-bottom:1rem; }
 .fmt-chip {
-    font-size:.58rem; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+    font-size:.57rem; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
     color:var(--text-muted);
     background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07);
-    padding:.2rem .55rem; border-radius:2px;
+    padding:.18rem .5rem; border-radius:2px;
 }
-
-/* ── RIGHT PANEL ── */
-.right-col {
-    flex: 1; overflow-y: auto; padding: 0;
-    animation: fadeUp .5s cubic-bezier(.22,1,.36,1) .15s both;
-    display: flex; flex-direction: column;
-}
-.right-col::-webkit-scrollbar { width:3px; }
-.right-col::-webkit-scrollbar-track { background:var(--bg); }
-.right-col::-webkit-scrollbar-thumb { background:var(--surface3); border-radius:3px; }
 
 /* ── EMPTY STATE ── */
 .empty-state {
     flex:1; display:flex; flex-direction:column;
     align-items:center; justify-content:center;
-    text-align:center; padding:3rem;
+    text-align:center; padding:2rem;
     animation: fadeIn .6s ease both;
+    min-height: calc(100vh - 140px);
 }
 .empty-icon {
-    font-family:'Bebas Neue', sans-serif; font-size:6rem; line-height:1;
-    color:rgba(255,255,255,.03); letter-spacing:.05em; margin-bottom:1.25rem;
+    font-family:'Bebas Neue', sans-serif; font-size:clamp(3rem, 8vw, 6rem); line-height:1;
+    color:rgba(255,255,255,.03); letter-spacing:.05em; margin-bottom:1rem;
 }
-.empty-title { font-size:.88rem; font-weight:600; color:var(--text-muted); }
-.empty-sub   { font-size:.74rem; color:var(--text-muted); opacity:.55; margin-top:.35rem; }
+.empty-title { font-size:.85rem; font-weight:600; color:var(--text-muted); }
+.empty-sub   { font-size:.72rem; color:var(--text-muted); opacity:.55; margin-top:.3rem; }
 
 /* ── RESULTS ── */
-.results-area { padding: 1.75rem 2rem; flex:1; }
+.results-area { padding: 1.25rem 1.25rem 0; }
 
 .result-header {
-    display:flex; align-items:center; justify-content:space-between; margin-bottom:1.1rem;
+    display:flex; align-items:center; justify-content:space-between; margin-bottom:.9rem;
 }
 .result-title {
-    font-family:'Bebas Neue', sans-serif; font-size:1.5rem;
+    font-family:'Bebas Neue', sans-serif; font-size:1.35rem;
     color:var(--white); letter-spacing:.04em;
 }
 .result-dot {
@@ -332,9 +336,9 @@ section[data-testid="stSidebar"] { display: none !important; }
     animation: pulsedot 2.5s ease infinite;
 }
 
-.export-row { display:flex; align-items:center; gap:.65rem; margin-bottom:.85rem; }
+.export-row { display:flex; align-items:center; gap:.55rem; margin-bottom:.7rem; }
 .export-tag {
-    font-size:.6rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+    font-size:.58rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
     color:var(--text-muted); white-space:nowrap;
 }
 .export-line { flex:1; height:1px; background:var(--border); }
@@ -342,15 +346,57 @@ section[data-testid="stSidebar"] { display: none !important; }
 .document-card {
     background:var(--surface); border:1px solid var(--border);
     border-top:2px solid rgba(229,9,20,.3); border-radius:4px;
-    padding:1.75rem 2rem; color:rgba(255,255,255,.72);
-    font-size:.875rem; line-height:1.88; white-space:pre-wrap;
+    padding:1.25rem 1.5rem; color:rgba(255,255,255,.72);
+    font-size:.84rem; line-height:1.85; white-space:pre-wrap;
     font-family:'Barlow', sans-serif;
     box-shadow:0 4px 28px rgba(0,0,0,.5);
     animation: fadeUp .4s cubic-bezier(.22,1,.36,1) both;
-    max-height: 65vh; overflow-y: auto;
+    max-height: calc(100vh - 340px); overflow-y: auto;
+    min-height: 200px;
 }
 .document-card::-webkit-scrollbar { width:3px; }
 .document-card::-webkit-scrollbar-thumb { background:var(--surface3); border-radius:3px; }
+
+/* ── MOBILE RESPONSIVE ── */
+@media (max-width: 768px) {
+    .nf-date { display: none; }
+    .nf-logo { font-size: 1.3rem; }
+    .panel-title { font-size: 1.8rem; }
+    .panel-eyebrow { margin-bottom: .8rem; }
+
+    /* Stack columns vertically on mobile */
+    [data-testid="stHorizontalBlock"] {
+        flex-direction: column !important;
+        height: auto !important;
+    }
+    [data-testid="stHorizontalBlock"] > div {
+        width: 100% !important;
+        min-width: 100% !important;
+        height: auto !important;
+        overflow: visible !important;
+    }
+    [data-testid="stHorizontalBlock"] > div:first-child {
+        border-right: none !important;
+        border-bottom: 1px solid var(--border) !important;
+    }
+    .left-col {
+        padding: 1.25rem 1rem;
+        min-height: auto;
+        height: auto;
+    }
+    .document-card {
+        max-height: 60vh;
+    }
+    .results-area { padding: 1rem; }
+    .stTabs [data-baseweb="tab-list"] { padding: 0 1rem !important; }
+    .stTabs [data-baseweb="tab"] { padding: .7rem .9rem !important; font-size: .68rem !important; }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+    .panel-title { font-size: 2rem; }
+    .panel-eyebrow { margin-bottom: .9rem; }
+    .document-card { max-height: calc(100vh - 310px); }
+}
 
 /* ── STREAMLIT UPLOADER ── */
 [data-testid="stFileUploader"] {
@@ -392,16 +438,16 @@ section[data-testid="stSidebar"] { display: none !important; }
 .stTabs [data-baseweb="tab-list"] {
     background: rgba(0,0,0,.5) !important;
     border-bottom: 1px solid var(--border2) !important;
-    gap: 0 !important; padding: 0 2rem !important;
+    gap: 0 !important; padding: 0 1.25rem !important;
     position: sticky; top: 0; z-index: 10;
 }
 .stTabs [data-baseweb="tab"] {
     font-family: 'Barlow', sans-serif !important;
-    font-size: .74rem !important; font-weight: 700 !important;
+    font-size: .72rem !important; font-weight: 700 !important;
     letter-spacing: .1em !important; text-transform: uppercase !important;
     color: var(--text-muted) !important; background: transparent !important;
     border: none !important; border-bottom: 2px solid transparent !important;
-    padding: .85rem 1.5rem !important; margin-bottom: -1px !important;
+    padding: .75rem 1.25rem !important; margin-bottom: -1px !important;
     transition: color .18s !important;
 }
 .stTabs [data-baseweb="tab"]:hover { color: var(--text) !important; }
@@ -489,7 +535,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ── TWO-COLUMN LAYOUT via Streamlit columns ───────────────────
-left_col, right_col = st.columns([38, 62], gap="small")
+left_col, right_col = st.columns([35, 65], gap="small")
 
 # ══ LEFT ══════════════════════════════════════════════════════
 with left_col:
@@ -566,10 +612,10 @@ with right_col:
                 c1.download_button("Word",  create_docx(content, title), f"{title}.docx", key=f"{key_p}_w")
                 c2.download_button("PDF",   create_pdf(content, title),  f"{title}.pdf",  key=f"{key_p}_p")
                 c3.download_button("Text",  content.encode('utf-8'),      f"{title}.txt",  key=f"{key_p}_t")
-                st.markdown(f'<div style="padding:0 2rem 2rem;"><div class="document-card">{content}</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="padding:0 1.25rem 1.5rem;"><div class="document-card">{content}</div></div>', unsafe_allow_html=True)
     else:
         st.markdown("""
-        <div class="empty-state" style="height:calc(100vh - 90px);">
+        <div class="empty-state">
           <div class="empty-icon">MINUTES</div>
           <div class="empty-title">No report generated yet</div>
           <div class="empty-sub">Upload files on the left and hit Generate</div>
