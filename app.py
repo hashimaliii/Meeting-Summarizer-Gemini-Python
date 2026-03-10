@@ -144,247 +144,434 @@ def create_docx(text, title="Meeting Minutes"):
     return bio.getvalue()
 
 # --- UI AND LAYOUT ---
-st.set_page_config(page_title="Minutes AI", layout="centered")
+st.set_page_config(page_title="Minutes AI", layout="wide")
 
-st.markdown(f"""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display&display=swap');
+CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700;800&display=swap');
 
-    html, body, [class*="css"] {{
-        font-family: 'DM Sans', sans-serif;
-    }}
+:root {
+    --red:       #E50914;
+    --red-dark:  #B20710;
+    --bg:        #141414;
+    --surface:   #1f1f1f;
+    --surface2:  #262626;
+    --surface3:  #333;
+    --border:    rgba(255,255,255,0.07);
+    --border2:   rgba(255,255,255,0.13);
+    --text:      #e5e5e5;
+    --text-dim:  #999;
+    --text-muted:#555;
+    --white:     #fff;
+}
 
-    .stApp {{
-        background-color: #0C1220;
-        color: #CBD5E1;
-    }}
+html, body, [class*="css"] {
+    font-family: 'Barlow', sans-serif !important;
+    -webkit-font-smoothing: antialiased;
+}
 
-    /* Hide empty blocks */
-    [data-testid="stVerticalBlock"] > div:empty {{ display: none !important; }}
+.stApp {
+    background: var(--bg) !important;
+    color: var(--text) !important;
+}
 
-    /* Header area */
-    .app-header {{
-        padding: 3rem 0 2rem 0;
-        border-bottom: 1px solid #1E2D45;
-        margin-bottom: 2.5rem;
-    }}
+/* Remove Streamlit default padding so we control layout */
+.block-container {
+    padding: 0 !important;
+    max-width: 100% !important;
+}
 
-    .app-title {{
-        font-family: 'DM Serif Display', serif;
-        font-size: 2.4rem;
-        font-weight: 400;
-        color: #F1F5F9;
-        letter-spacing: -0.02em;
-        margin: 0 0 0.35rem 0;
-        line-height: 1.2;
-    }}
+[data-testid="stVerticalBlock"] > div:empty { display: none !important; }
+#MainMenu, footer { visibility: hidden; }
+header[data-testid="stHeader"] { display: none !important; }
+[data-testid="stToolbar"]     { display: none !important; }
+[data-testid="stDecoration"]  { display: none !important; }
+section[data-testid="stSidebar"] { display: none !important; }
 
-    .app-subtitle {{
-        font-size: 0.875rem;
-        color: #64748B;
-        font-weight: 400;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-    }}
+/* ── ANIMATIONS ── */
+@keyframes fadeUp  { from { opacity:0; transform:translateY(16px) } to { opacity:1; transform:translateY(0) } }
+@keyframes fadeIn  { from { opacity:0 } to { opacity:1 } }
+@keyframes ticker  { from { transform:translateX(0) } to { transform:translateX(-50%) } }
+@keyframes glowred { 0%,100% { opacity:.5 } 50% { opacity:1 } }
+@keyframes pulsedot { 0%,100% { box-shadow:0 0 0 0 rgba(229,9,20,.55) } 70% { box-shadow:0 0 0 9px rgba(229,9,20,0) } }
 
-    .date-badge {{
-        display: inline-block;
-        background: #131F33;
-        border: 1px solid #1E2D45;
-        color: #94A3B8;
-        font-size: 0.78rem;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        padding: 0.35rem 0.85rem;
-        border-radius: 4px;
-        margin-top: 1rem;
-        font-weight: 500;
-    }}
+/* ── NAVBAR ── */
+.nf-nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 2.5rem;
+    height: 58px;
+    background: rgba(14,14,14,0.97);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 999;
+    animation: fadeIn .3s ease both;
+}
+.nf-logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.65rem; letter-spacing: .06em;
+    color: var(--red);
+    text-shadow: 0 2px 12px rgba(229,9,20,.35);
+    line-height: 1;
+}
+.nf-logo span {
+    color: rgba(255,255,255,.8); font-size: .72rem;
+    letter-spacing: .2em; margin-left: .4rem;
+    font-family: 'Barlow', sans-serif; font-weight: 600;
+    text-shadow: none; vertical-align: middle;
+}
+.nf-nav-right { display:flex; align-items:center; gap:1rem; }
+.nf-date  { font-size:.75rem; color:var(--text-dim); font-weight:500; }
+.nf-pill  {
+    font-size:.6rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--white); background:var(--red);
+    padding:.22rem .65rem; border-radius:2px;
+}
 
-    /* Upload zone */
-    [data-testid="stFileUploader"] {{
-        background: #111827;
-        border: 1px solid #1E2D45;
-        border-radius: 8px;
-        padding: 0.5rem;
-    }}
+/* ── TICKER ── */
+.nf-ticker {
+    background: rgba(0,0,0,.55);
+    border-bottom: 1px solid var(--border);
+    padding: .38rem 0; overflow: hidden;
+}
+.nf-ticker-track { display:flex; width:max-content; animation: ticker 28s linear infinite; }
+.nf-ticker-item  {
+    white-space:nowrap; font-size:.62rem; font-weight:700;
+    letter-spacing:.12em; text-transform:uppercase;
+    color:var(--text-muted); padding:0 2.5rem;
+}
+.nf-ticker-item b { color:var(--red); margin-right:.4rem; }
 
-    [data-testid="stFileUploader"] label {{
-        color: #94A3B8 !important;
-        font-size: 0.85rem;
-        font-weight: 500;
-        letter-spacing: 0.02em;
-    }}
+/* ── MAIN COLUMNS WRAPPER ── */
+.main-wrap {
+    display: flex;
+    height: calc(100vh - 84px);   /* full height minus nav+ticker */
+}
 
-    /* Primary button */
-    div.stButton > button {{
-        background: #1D4ED8 !important;
-        color: #F8FAFC !important;
-        font-family: 'DM Sans', sans-serif !important;
-        font-weight: 600 !important;
-        font-size: 0.875rem !important;
-        letter-spacing: 0.04em !important;
-        text-transform: uppercase !important;
-        width: 100% !important;
-        border: none !important;
-        border-radius: 6px !important;
-        padding: 0.75rem 1.5rem !important;
-        transition: background 0.2s ease !important;
-        margin-top: 1rem !important;
-    }}
+/* ── LEFT PANEL ── */
+.left-col {
+    width: 715px;
+    min-width: 320px;
+    flex-shrink: 0;
+    background: linear-gradient(180deg, #0d0d0d 0%, #141414 100%);
+    border-right: 1px solid var(--border);
+    padding: 5rem 1.75rem;
+    display: flex; flex-direction: column;
+    position: relative; overflow: hidden;
+    animation: fadeUp .5s cubic-bezier(.22,1,.36,1) .08s both;
+}
+.left-col::before {
+    content:''; position:absolute;
+    width:350px; height:350px;
+    background:radial-gradient(circle, rgba(229,9,20,.08) 0%, transparent 70%);
+    top:-80px; left:-80px;
+    animation: glowred 5s ease-in-out infinite; pointer-events:none;
+}
 
-    div.stButton > button:hover {{
-        background: #2563EB !important;
-    }}
+.panel-eyebrow {
+    font-size:.58rem; font-weight:700; letter-spacing:.18em; text-transform:uppercase;
+    color:var(--red); margin-bottom:5rem;
+    display:flex; align-items:center; gap:.5rem;
+}
+.panel-eyebrow::before { content:''; width:20px; height:2px; background:var(--red); display:block; }
 
-    /* Download buttons */
-    div.stDownloadButton > button {{
-        background: transparent !important;
-        color: #94A3B8 !important;
-        font-family: 'DM Sans', sans-serif !important;
-        font-size: 0.78rem !important;
-        font-weight: 500 !important;
-        letter-spacing: 0.05em !important;
-        text-transform: uppercase !important;
-        border: 1px solid #1E2D45 !important;
-        border-radius: 5px !important;
-        padding: 0.5rem 0.9rem !important;
-        width: 100% !important;
-        transition: all 0.2s ease !important;
-    }}
+.panel-title {
+    font-family:'Bebas Neue', sans-serif;
+    font-size:2.6rem; font-weight:400; line-height:.92;
+    color:var(--white); letter-spacing:.02em; margin-bottom:.65rem;
+}
+.panel-title em { color:var(--red); font-style:normal; }
 
-    div.stDownloadButton > button:hover {{
-        background: #131F33 !important;
-        border-color: #334155 !important;
-        color: #E2E8F0 !important;
-    }}
+.panel-desc {
+    font-size:.82rem; color:var(--text-dim); line-height:1.55;
+    margin-bottom:1.25rem; font-weight:400;
+}
 
-    /* Tabs */
-    .stTabs [data-baseweb="tab-list"] {{
-        background: transparent !important;
-        border-bottom: 1px solid #1E2D45 !important;
-        gap: 0 !important;
-    }}
+.fmt-row { display:flex; gap:.35rem; flex-wrap:wrap; margin-bottom:1.25rem; }
+.fmt-chip {
+    font-size:.58rem; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+    color:var(--text-muted);
+    background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07);
+    padding:.2rem .55rem; border-radius:2px;
+}
 
-    .stTabs [data-baseweb="tab"] {{
-        font-family: 'DM Sans', sans-serif !important;
-        font-size: 0.8rem !important;
-        font-weight: 500 !important;
-        letter-spacing: 0.06em !important;
-        text-transform: uppercase !important;
-        color: #475569 !important;
-        background: transparent !important;
-        border: none !important;
-        padding: 0.75rem 1.5rem !important;
-    }}
+/* ── RIGHT PANEL ── */
+.right-col {
+    flex: 1; overflow-y: auto; padding: 0;
+    animation: fadeUp .5s cubic-bezier(.22,1,.36,1) .15s both;
+    display: flex; flex-direction: column;
+}
+.right-col::-webkit-scrollbar { width:3px; }
+.right-col::-webkit-scrollbar-track { background:var(--bg); }
+.right-col::-webkit-scrollbar-thumb { background:var(--surface3); border-radius:3px; }
 
-    .stTabs [aria-selected="true"] {{
-        color: #F1F5F9 !important;
-        border-bottom: 2px solid #1D4ED8 !important;
-        background: transparent !important;
-    }}
+/* ── EMPTY STATE ── */
+.empty-state {
+    flex:1; display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    text-align:center; padding:3rem;
+    animation: fadeIn .6s ease both;
+}
+.empty-icon {
+    font-family:'Bebas Neue', sans-serif; font-size:6rem; line-height:1;
+    color:rgba(255,255,255,.03); letter-spacing:.05em; margin-bottom:1.25rem;
+}
+.empty-title { font-size:.88rem; font-weight:600; color:var(--text-muted); }
+.empty-sub   { font-size:.74rem; color:var(--text-muted); opacity:.55; margin-top:.35rem; }
 
-    /* Document output card */
-    .document-card {{
-        background: #0F1929;
-        border: 1px solid #1E2D45;
-        border-radius: 8px;
-        padding: 2.5rem 3rem;
-        margin-top: 1.5rem;
-        color: #CBD5E1;
-        font-size: 0.9rem;
-        line-height: 1.85;
-        white-space: pre-wrap;
-        font-family: 'DM Sans', sans-serif;
-    }}
+/* ── RESULTS ── */
+.results-area { padding: 1.75rem 2rem; flex:1; }
 
-    /* Alerts / success */
-    .stAlert {{
-        background: #0F2419 !important;
-        border: 1px solid #166534 !important;
-        border-radius: 6px !important;
-        color: #86EFAC !important;
-    }}
+.result-header {
+    display:flex; align-items:center; justify-content:space-between; margin-bottom:1.1rem;
+}
+.result-title {
+    font-family:'Bebas Neue', sans-serif; font-size:1.5rem;
+    color:var(--white); letter-spacing:.04em;
+}
+.result-dot {
+    width:8px; height:8px; border-radius:50%; background:var(--red);
+    animation: pulsedot 2.5s ease infinite;
+}
 
-    /* Spinner text */
-    .stSpinner > div > div {{
-        border-top-color: #1D4ED8 !important;
-    }}
+.export-row { display:flex; align-items:center; gap:.65rem; margin-bottom:.85rem; }
+.export-tag {
+    font-size:.6rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--text-muted); white-space:nowrap;
+}
+.export-line { flex:1; height:1px; background:var(--border); }
 
-    /* Section divider label */
-    .section-label {{
-        font-size: 0.72rem;
-        font-weight: 600;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-        color: #475569;
-        margin-bottom: 0.75rem;
-        margin-top: 2rem;
-    }}
+.document-card {
+    background:var(--surface); border:1px solid var(--border);
+    border-top:2px solid rgba(229,9,20,.3); border-radius:4px;
+    padding:1.75rem 2rem; color:rgba(255,255,255,.72);
+    font-size:.875rem; line-height:1.88; white-space:pre-wrap;
+    font-family:'Barlow', sans-serif;
+    box-shadow:0 4px 28px rgba(0,0,0,.5);
+    animation: fadeUp .4s cubic-bezier(.22,1,.36,1) both;
+    max-height: 65vh; overflow-y: auto;
+}
+.document-card::-webkit-scrollbar { width:3px; }
+.document-card::-webkit-scrollbar-thumb { background:var(--surface3); border-radius:3px; }
 
-    /* Hide Streamlit branding */
-    #MainMenu, footer {{ visibility: hidden; }}
-    header[data-testid="stHeader"] {{ background: transparent; }}
-    </style>
-""", unsafe_allow_html=True)
+/* ── STREAMLIT UPLOADER ── */
+[data-testid="stFileUploader"] {
+    background: var(--surface) !important;
+    border: 1px solid var(--border2) !important;
+    border-radius: 5px !important; padding: .3rem !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,.4) !important;
+    transition: border-color .2s, box-shadow .2s !important;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color: rgba(229,9,20,.4) !important;
+    box-shadow: 0 4px 24px rgba(229,9,20,.12) !important;
+}
+[data-testid="stFileUploaderDropzone"] {
+    background: var(--surface2) !important;
+    border: 1.5px dashed rgba(255,255,255,.09) !important;
+    border-radius: 4px !important; padding: 1.5rem 1rem !important;
+    transition: all .2s !important;
+}
+[data-testid="stFileUploaderDropzone"]:hover {
+    border-color: rgba(229,9,20,.45) !important;
+    background: rgba(229,9,20,.03) !important;
+}
+[data-testid="stFileUploaderDropzoneInstructions"] span {
+    color: var(--text-dim) !important; font-size: .82rem !important;
+    font-family: 'Barlow', sans-serif !important;
+}
+[data-testid="stFileUploaderDropzone"] button {
+    background: var(--surface3) !important; color: var(--text) !important;
+    border: 1px solid rgba(255,255,255,.1) !important; border-radius: 3px !important;
+    font-size: .76rem !important; font-weight: 600 !important;
+    font-family: 'Barlow', sans-serif !important; padding: .4rem 1rem !important;
+    transition: all .15s !important;
+}
+[data-testid="stFileUploaderDropzone"] button:hover { background: rgba(255,255,255,.1) !important; }
+[data-testid="stFileUploader"] label { display: none !important; }
 
-# Header
-st.markdown(f"""
-    <div class="app-header">
-        <div class="app-title">Minutes AI</div>
-        <div class="app-subtitle">Multi-Medium Meeting Intelligence</div>
-        <div class="date-badge">{current_date_val}</div>
-    </div>
-""", unsafe_allow_html=True)
+/* ── TABS (inside right panel) ── */
+.stTabs [data-baseweb="tab-list"] {
+    background: rgba(0,0,0,.5) !important;
+    border-bottom: 1px solid var(--border2) !important;
+    gap: 0 !important; padding: 0 2rem !important;
+    position: sticky; top: 0; z-index: 10;
+}
+.stTabs [data-baseweb="tab"] {
+    font-family: 'Barlow', sans-serif !important;
+    font-size: .74rem !important; font-weight: 700 !important;
+    letter-spacing: .1em !important; text-transform: uppercase !important;
+    color: var(--text-muted) !important; background: transparent !important;
+    border: none !important; border-bottom: 2px solid transparent !important;
+    padding: .85rem 1.5rem !important; margin-bottom: -1px !important;
+    transition: color .18s !important;
+}
+.stTabs [data-baseweb="tab"]:hover { color: var(--text) !important; }
+.stTabs [aria-selected="true"] {
+    color: var(--white) !important;
+    border-bottom: 2px solid var(--red) !important;
+    background: transparent !important;
+}
+.stTabs [data-baseweb="tab-panel"]    { padding: 0 !important; }
+.stTabs [data-baseweb="tab-highlight"] { display: none !important; }
 
+/* ── PRIMARY BUTTON ── */
+div.stButton > button {
+    width: 100% !important; background: var(--red) !important;
+    color: var(--white) !important; font-family: 'Barlow', sans-serif !important;
+    font-weight: 700 !important; font-size: .84rem !important;
+    letter-spacing: .08em !important; text-transform: uppercase !important;
+    border: none !important; border-radius: 3px !important;
+    padding: .75rem 1rem !important; margin-top: .85rem !important;
+    box-shadow: 0 4px 18px rgba(229,9,20,.28) !important;
+    transition: all .18s cubic-bezier(.4,0,.2,1) !important;
+}
+div.stButton > button:hover {
+    background: #f40612 !important;
+    box-shadow: 0 6px 30px rgba(229,9,20,.42) !important;
+    transform: translateY(-1px) !important;
+}
+div.stButton > button:active {
+    background: var(--red-dark) !important; transform: scale(.998) !important;
+}
+
+/* ── DOWNLOAD BUTTONS ── */
+div.stDownloadButton > button {
+    width: 100% !important; background: rgba(255,255,255,.06) !important;
+    color: var(--text) !important; font-family: 'Barlow', sans-serif !important;
+    font-size: .7rem !important; font-weight: 700 !important;
+    letter-spacing: .08em !important; text-transform: uppercase !important;
+    border: 1px solid rgba(255,255,255,.09) !important; border-radius: 3px !important;
+    padding: .55rem .4rem !important; transition: all .15s ease !important;
+}
+div.stDownloadButton > button:hover {
+    background: rgba(255,255,255,.12) !important;
+    border-color: rgba(255,255,255,.18) !important;
+    color: var(--white) !important; transform: translateY(-1px) !important;
+}
+
+/* ── ALERTS / SPINNER ── */
+.stAlert {
+    background: rgba(229,9,20,.08) !important;
+    border: 1px solid rgba(229,9,20,.25) !important;
+    border-radius: 3px !important; color: #ff7070 !important;
+    font-size: .8rem !important; font-weight: 500 !important;
+}
+.stSpinner > div {
+    border-color: var(--surface3) var(--surface3) var(--surface3) var(--red) !important;
+}
+</style>
+"""
+
+st.markdown(CSS, unsafe_allow_html=True)
+
+# session state
 if "detailed" not in st.session_state: st.session_state.detailed = None
-if "concise" not in st.session_state: st.session_state.concise = None
+if "concise"  not in st.session_state: st.session_state.concise  = None
 
-st.markdown('<div class="section-label">Upload Source Material</div>', unsafe_allow_html=True)
-uploaded_files = st.file_uploader(
-    "Accepted formats: MP3, WAV, M4A, TXT, PDF, DOCX",
-    type=['mp3', 'wav', 'm4a', 'txt', 'pdf', 'docx'],
-    accept_multiple_files=True,
-    label_visibility="visible"
+# ticker
+items = ["Meeting Minutes","Flash Reports","PDF Export","Word Export",
+         "Multi-File Synthesis","Action Items","Key Decisions","Audio Transcription"]
+ticker_html = "".join(
+    f'<span class="nf-ticker-item"><b>●</b>{t}</span>' for t in items * 3
 )
 
-# Generate button
-if uploaded_files and st.button("Generate Master Report"):
-    all_context = []
-    for f in uploaded_files:
-        with st.spinner(f"Processing {f.name}..."):
-            if f.name.endswith('.txt'):
-                all_context.append(f.read().decode("utf-8"))
-            elif f.name.endswith('.pdf'):
-                all_context.append(extract_text_from_pdf(f))
-            elif f.name.endswith('.docx'):
-                all_context.append(extract_text_from_docx(f))
-            else:
-                all_context.append(process_audio(f))
+# ── NAVBAR ────────────────────────────────────────────────────
+st.markdown(f"""
+<div class="nf-nav">
+  <div class="nf-logo">MINUTES<span>AI</span></div>
+  <div class="nf-nav-right">
+    <span class="nf-date">{current_date_val}</span>
+    <span class="nf-pill">Pro</span>
+  </div>
+</div>
+<div class="nf-ticker">
+  <div class="nf-ticker-track">{ticker_html}</div>
+</div>
+""", unsafe_allow_html=True)
 
-    with st.spinner("Synthesizing documents..."):
-        date_instr = f"MANDATORY: Today is {current_date_val}. Replace all [Current Date] placeholders."
+# ── TWO-COLUMN LAYOUT via Streamlit columns ───────────────────
+left_col, right_col = st.columns([38, 62], gap="small")
 
-        res_det = client.models.generate_content(model=GEMINI_MODEL, contents=[date_instr, PROFESSIONAL_PROMPT, "\n\n".join(all_context)])
-        st.session_state.detailed = res_det.text
+# ══ LEFT ══════════════════════════════════════════════════════
+with left_col:
+    st.markdown("""
+    <div class="left-col">
+      <div class="panel-eyebrow">Upload</div>
+      <div class="panel-title">MEETING<em> MINUTES</em> ON DEMAND.</div>
+      <p class="panel-desc">Drop in audio, transcripts or notes. Walk away with polished professional documents instantly.</p>
+      <div class="fmt-row">
+        <span class="fmt-chip">MP3</span><span class="fmt-chip">WAV</span>
+        <span class="fmt-chip">M4A</span><span class="fmt-chip">TXT</span>
+        <span class="fmt-chip">PDF</span><span class="fmt-chip">DOCX</span>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-        res_con = client.models.generate_content(model=GEMINI_MODEL, contents=[date_instr, CONCISE_PROMPT, res_det.text])
-        st.session_state.concise = res_con.text
-    st.success("Report generated successfully.")
+    uploaded_files = st.file_uploader(
+        "upload",
+        type=['mp3','wav','m4a','txt','pdf','docx'],
+        accept_multiple_files=True,
+        label_visibility="collapsed"
+    )
 
-# --- OUTPUT TABS ---
-if st.session_state.detailed:
-    st.markdown('<div class="section-label">Generated Reports</div>', unsafe_allow_html=True)
-    t1, t2 = st.tabs(["Detailed Minutes", "Executive Flash Report"])
-    for tab, content, title, key_p in zip(
-        [t1, t2],
-        [st.session_state.detailed, st.session_state.concise],
-        ["Detailed Minutes", "Flash Report"],
-        ["d", "c"]
-    ):
-        with tab:
-            c1, c2, c3 = st.columns(3)
-            c1.download_button("Word Document", create_docx(content, title), f"{title}.docx", key=f"{key_p}_w")
-            c2.download_button("PDF Export", create_pdf(content, title), f"{title}.pdf", key=f"{key_p}_p")
-            c3.download_button("Plain Text", content.encode('utf-8'), f"{title}.txt", key=f"{key_p}_t")
-            st.markdown(f'<div class="document-card">{content}</div>', unsafe_allow_html=True)
+    if uploaded_files and st.button("▶  Generate Report"):
+        all_context = []
+        for f in uploaded_files:
+            with st.spinner(f"Processing {f.name}..."):
+                if f.name.endswith('.txt'):
+                    all_context.append(f.read().decode("utf-8"))
+                elif f.name.endswith('.pdf'):
+                    all_context.append(extract_text_from_pdf(f))
+                elif f.name.endswith('.docx'):
+                    all_context.append(extract_text_from_docx(f))
+                else:
+                    all_context.append(process_audio(f))
+        with st.spinner("Synthesizing..."):
+            date_instr = f"MANDATORY: Today is {current_date_val}. Replace all [Current Date] placeholders."
+            res_det = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=[date_instr, PROFESSIONAL_PROMPT, "\n\n".join(all_context)]
+            )
+            st.session_state.detailed = res_det.text
+            res_con = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=[date_instr, CONCISE_PROMPT, res_det.text]
+            )
+            st.session_state.concise = res_con.text
+        st.success("Done.")
+
+# ══ RIGHT ══════════════════════════════════════════════════════
+with right_col:
+    if st.session_state.detailed:
+        t1, t2 = st.tabs(["  Detailed Minutes  ", "  Executive Flash Report  "])
+        for tab, content, title, key_p in zip(
+            [t1, t2],
+            [st.session_state.detailed, st.session_state.concise],
+            ["Detailed Minutes", "Flash Report"],
+            ["d", "c"]
+        ):
+            with tab:
+                st.markdown(f"""
+                <div class="results-area">
+                  <div class="result-header">
+                    <span class="result-title">{title.upper()}</span>
+                    <div class="result-dot"></div>
+                  </div>
+                  <div class="export-row">
+                    <span class="export-tag">Export as</span>
+                    <div class="export-line"></div>
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+                c1, c2, c3 = st.columns(3)
+                c1.download_button("Word",  create_docx(content, title), f"{title}.docx", key=f"{key_p}_w")
+                c2.download_button("PDF",   create_pdf(content, title),  f"{title}.pdf",  key=f"{key_p}_p")
+                c3.download_button("Text",  content.encode('utf-8'),      f"{title}.txt",  key=f"{key_p}_t")
+                st.markdown(f'<div style="padding:0 2rem 2rem;"><div class="document-card">{content}</div></div>', unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div class="empty-state" style="height:calc(100vh - 90px);">
+          <div class="empty-icon">MINUTES</div>
+          <div class="empty-title">No report generated yet</div>
+          <div class="empty-sub">Upload files on the left and hit Generate</div>
+        </div>
+        """, unsafe_allow_html=True)
