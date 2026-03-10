@@ -11,12 +11,12 @@ from dotenv import load_dotenv
 from pydub import AudioSegment
 from google import genai
 
-# 1. Configuration & Global Date Injection
+# 1. Setup and Date Extraction
 load_dotenv()
 client = genai.Client()
 
-# This value is forced into the LLM prompt to fix the [Current Date] error
-current_date_str = datetime.now().strftime("%B %d, %Y")
+# Fixes the [Current Date] placeholder issue
+current_date_val = datetime.now().strftime("%B %d, %Y")
 
 # Fetch the system prompt from the .env file
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
@@ -48,7 +48,7 @@ List all formal decisions and agreements reached.
 List any topics tabled for future meetings, or the agreed-upon date for the next follow-up.
 """)
 
-# --- MULTI-MEDIUM PARSERS ---
+# --- PARSERS FOR MULTIPLE MEDIUMS ---
 
 def extract_text_from_pdf(file_obj):
     reader = PdfReader(file_obj)
@@ -83,22 +83,21 @@ def process_audio(file_obj):
     finally:
         if os.path.exists(path): os.remove(path)
 
-# --- HARDENED EXPORT ENGINES ---
+# --- HARDENED EXPORT ENGINES (FIXES TRUNCATION) ---
 
 def create_pdf(text, title="Official Document"):
-    """Fixed PDF engine: Strips Markdown and uses multi_cell to prevent truncation."""
+    """Uses multi_cell to prevent word truncation and strips Markdown."""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    
     pdf.set_font("Helvetica", 'B', 16)
     pdf.cell(190, 10, title, ln=True, align='C')
     pdf.ln(10)
 
-    # Sanitize text for FPDF compatibility
+    # Sanitize and strip formatting that causes fragmentation
     text = text.replace('‘', "'").replace('’', "'").replace('“', '"').replace('”', '"').replace('–', '-')
     text = "".join(i for i in text if ord(i) < 256)
-
+    
     pdf.set_font("Helvetica", size=11)
     for line in text.split('\n'):
         line = line.strip().replace('**', '').replace('#', '')
@@ -106,14 +105,13 @@ def create_pdf(text, title="Official Document"):
             pdf.ln(4)
             continue
         try:
-            # multi_cell prevents the "syste" / "Progr" truncation errors
+            # Fixes truncation seen in Detailed.pdf
             pdf.multi_cell(w=190, h=7, txt=line, border=0, align='L')
         except:
             continue
     return bytes(pdf.output())
 
 def create_docx(text, title="Meeting Minutes"):
-    """Generates professional Word document."""
     doc = Document()
     doc.add_heading(title, 0)
     for line in text.split('\n'):
@@ -124,7 +122,7 @@ def create_docx(text, title="Meeting Minutes"):
     doc.save(bio)
     return bio.getvalue()
 
-# --- UI STYLING ---
+# --- UI AND LAYOUT ---
 st.set_page_config(page_title="Minutes AI Pro", layout="centered")
 
 st.markdown(f"""
@@ -140,9 +138,8 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# --- APP LAYOUT ---
 st.title("Minutes AI: Multi-Medium Synthesis")
-st.write(f"Meeting Date: **{current_date_str}**")
+st.write(f"Meeting Date: **{current_date_val}**")
 
 if "detailed" not in st.session_state: st.session_state.detailed = None
 if "concise" not in st.session_state: st.session_state.concise = None
@@ -151,7 +148,8 @@ uploaded_files = st.file_uploader("Upload Audio, TXT, PDF, or DOCX",
                                   type=['mp3', 'wav', 'm4a', 'txt', 'pdf', 'docx'], 
                                   accept_multiple_files=True)
 
-if uploaded_files and st.button("Merge & Generate Minutes"):
+# Generate button
+if uploaded_files and st.button("Generate Master Report"):
     all_context = []
     for f in uploaded_files:
         with st.spinner(f"Reading {f.name}..."):
@@ -165,28 +163,24 @@ if uploaded_files and st.button("Merge & Generate Minutes"):
                 all_context.append(process_audio(f))
     
     with st.spinner("Synthesizing final documents..."):
-        # MANDATORY DATE INJECTION to fix [Current Date] error
-        date_instr = f"MANDATORY: Today's date is {current_date_str}. Use this for all date headers and replace any [Current Date] placeholders."
+        # Explicit date instruction
+        date_instr = f"MANDATORY: Today is {current_date_val}. Replace all [Current Date] placeholders."
         
-        res_det = client.models.generate_content(model=GEMINI_MODEL, contents=[date_instr, PROFESSIONAL_PROMPT, "\n\n".join(all_context)])
+        res_det = client.models.generate_content(model=GEMINI_MODEL, contents=[date_instr, PROF_PROMPT, "\n\n".join(all_context)])
         st.session_state.detailed = res_det.text
         
         res_con = client.models.generate_content(model=GEMINI_MODEL, contents=[date_instr, CONCISE_PROMPT, res_det.text])
         st.session_state.concise = res_con.text
     st.success("Analysis Complete!")
 
-# --- DISPLAY WITH TOP BUTTONS ---
+# --- TOP DOWNLOAD BUTTONS ---
 if st.session_state.detailed:
     t1, t2 = st.tabs(["Detailed Minutes", "Executive Flash Report"])
-    
-    for tab, content, title, key_prefix in zip([t1, t2], 
-                                               [st.session_state.detailed, st.session_state.concise], 
-                                               ["Detailed Minutes", "Flash Report"], ["d", "c"]):
+    for tab, content, title, key_p in zip([t1, t2], [st.session_state.detailed, st.session_state.concise], 
+                                           ["Detailed Minutes", "Flash Report"], ["d", "c"]):
         with tab:
-            # Buttons at top to prevent scrolling
             c1, c2, c3 = st.columns(3)
-            c1.download_button("Download PDF", create_pdf(content, title), f"{title}.pdf", key=f"{key_prefix}_p")
-            c2.download_button("Download Word", create_docx(content, title), f"{title}.docx", key=f"{key_prefix}_w")
-            c3.download_button("Download Text", content.encode('utf-8'), f"{title}.txt", key=f"{key_prefix}_t")
-            
+            c1.download_button("Word", create_docx(content, title), f"{title}.docx", key=f"{key_p}_w")
+            c2.download_button("PDF", create_pdf(content, title), f"{title}.pdf", key=f"{key_p}_p")
+            c3.download_button("Text", content.encode('utf-8'), f"{title}.txt", key=f"{key_p}_t")
             st.markdown(f'<div class="document-card">{content}</div>', unsafe_allow_html=True)
