@@ -23,7 +23,7 @@ To run this application, you must have:
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/yourusername/enterprise-meeting-summarizer.git
+   git clone https://github.com/hashimaliii/Meeting-Summarizer-Gemini-Python.git
    cd enterprise-meeting-summarizer
    ```
 
