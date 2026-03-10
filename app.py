@@ -12,14 +12,13 @@ from pydub import AudioSegment
 from google import genai
 from google.genai import types
 
-# Load environment variables from the .env file
+# 1. Load configuration
 load_dotenv()
-
-# Initialize the GenAI Client
 client = genai.Client()
 
 # Fetch the system prompt from the .env file
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+CONCISE_PROMPT = os.getenv("CONCISE_PROMPT", "You are a Chief of Staff. Summarize the following meeting notes into a 'Flash Report'. Focus only on the 3 most critical outcomes, the 5 most urgent action items, and any major blockers. Keep it under 300 words. Use bullet points for readability.")
 PROFESSIONAL_PROMPT = os.getenv("PROFESSIONAL_PROMPT", """
 You are a Senior Corporate Secretary. Your task is to listen to the provided meeting audio/transcript and generate exhaustive, professional meeting minutes. 
 Do not leave out any discussed topics. Capture the nuance, data points, and different perspectives shared.
@@ -47,262 +46,165 @@ List all formal decisions and agreements reached.
 List any topics tabled for future meetings, or the agreed-upon date for the next follow-up.
 """)
 
-def create_docx(text):
-    """Converts markdown text into a properly formatted Word document."""
+# --- PDF & DOCX EXPORTERS ---
+def create_docx(text, title="Meeting Minutes"):
     doc = Document()
+    doc.add_heading(title, 0)
     for line in text.split('\n'):
-        if line.startswith('# '):
-            doc.add_heading(line.replace('# ', '').strip(), level=1)
-        elif line.startswith('## '):
-            doc.add_heading(line.replace('## ', '').strip(), level=2)
-        elif line.startswith('### '):
-            doc.add_heading(line.replace('### ', '').strip(), level=3)
-        elif line.strip():
-            p = doc.add_paragraph()
-            if line.startswith('* ') or line.startswith('- '):
-                p.style = 'List Bullet'
-                line = line[2:]
-            
-            parts = line.split('**')
-            for i, part in enumerate(parts):
-                if i % 2 == 1:
-                    p.add_run(part).bold = True
-                else:
-                    p.add_run(part)
-    
+        if line.strip():
+            doc.add_paragraph(line.replace('#', '').strip())
     bio = io.BytesIO()
     doc.save(bio)
     return bio.getvalue()
 
-def create_pdf(text):
-    """Converts markdown text into a cleanly formatted PDF document safely."""
+def create_pdf(text, title="Official Document"):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.set_font("Helvetica", size=11)
     
+    # 1. Use a standard width (Page width - margins)
+    # A4 is 210mm wide. 10mm margins on each side = 190mm effective width.
+    effective_width = 190 
+
+    # 2. Add Title
+    pdf.set_font("Helvetica", 'B', 16)
+    pdf.cell(effective_width, 10, title, ln=True, align='C')
+    pdf.ln(10)
+    
+    # 3. Clean and Encode the text
+    # Standard fonts only like Latin-1 characters. 
+    # We replace common problematic AI characters manually.
     text = text.replace('‘', "'").replace('’', "'").replace('“', '"').replace('”', '"').replace('–', '-')
+    # Remove any characters that aren't in the Latin-1 range to prevent crashes
+    text = "".join(i for i in text if ord(i) < 256)
+
+    pdf.set_font("Helvetica", size=11)
     
     for line in text.split('\n'):
         line = line.strip()
         
+        # Skip truly empty lines, but add a spacer
         if not line:
-            pdf.ln(6)
+            pdf.ln(5)
             continue
             
-        if line.startswith('---') or line.startswith('***') or line.startswith('___'):
-            pdf.set_text_color(150, 150, 150)
-            pdf.cell(0, 10, "_" * 40, ln=True, align='C')
-            pdf.set_text_color(0, 0, 0)
+        # Clean markdown bolding for the PDF
+        clean_line = line.replace('**', '').replace('#', '').strip()
+        
+        # Ensure we don't pass an empty string to multi_cell after cleaning
+        if not clean_line:
             continue
 
         try:
-            if line.startswith('# '):
-                pdf.set_font("Helvetica", 'B', 16)
-                pdf.multi_cell(0, 10, line.replace('# ', '').strip() or " ")
-                pdf.set_font("Helvetica", size=11)
-            elif line.startswith('## '):
-                pdf.set_font("Helvetica", 'B', 14)
-                pdf.multi_cell(0, 10, line.replace('## ', '').strip() or " ")
-                pdf.set_font("Helvetica", size=11)
-            elif line.startswith('### '):
-                pdf.set_font("Helvetica", 'B', 12)
-                pdf.multi_cell(0, 8, line.replace('### ', '').strip() or " ")
-                pdf.set_font("Helvetica", size=11)
-            else:
-                clean_line = line.replace('**', '')
-                pdf.multi_cell(0, 6, clean_line)
+            # We use effective_width instead of 0 for stability
+            pdf.multi_cell(w=effective_width, h=6, txt=clean_line)
         except Exception:
-            safe_line = " ".join([line[i:i+70] for i in range(0, len(line), 70)])
-            pdf.set_font("Helvetica", size=11)
-            pdf.multi_cell(0, 6, safe_line.replace('**', ''))
+            # Ultimate Fallback: If fpdf still hates the line, 
+            # we print it character by character or chunk it manually
+            short_chunk = clean_line[:50] + "..."
+            pdf.multi_cell(w=effective_width, h=6, txt=short_chunk)
             
     return bytes(pdf.output())
 
-def process_audio_with_gemini(uploaded_file):
-    """Chunks large audio files, processes each part, and synthesizes a final document."""
-    file_extension = uploaded_file.name.split('.')[-1].lower()
-    
-    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as temp_audio:
-        temp_audio.write(uploaded_file.read())
-        temp_audio_path = temp_audio.name
+# --- CORE LOGIC ---
+def process_audio_to_detailed(uploaded_file):
+    """Chunks audio and generates full detailed minutes."""
+    file_ext = uploaded_file.name.split('.')[-1].lower()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as tmp:
+        tmp.write(uploaded_file.read())
+        tmp_path = tmp.name
 
     try:
-        status_text = st.empty()
-        progress_bar = st.progress(0)
+        status = st.empty()
+        progress = st.progress(0)
+        audio = AudioSegment.from_file(tmp_path)
         
-        status_text.info("Loading audio file for analysis (this may take a moment for massive files)...")
-        audio = AudioSegment.from_file(temp_audio_path)
-        
-        chunk_length_ms = 45 * 60 * 1000
-        total_chunks = math.ceil(len(audio) / chunk_length_ms)
-        
-        all_summaries = []
-        
+        chunk_ms = 45 * 60 * 1000 # 45 mins
+        total_chunks = math.ceil(len(audio) / chunk_ms)
+        all_chunks_text = []
+
         for i in range(total_chunks):
-            status_text.info(f"Analyzing Part {i+1} of {total_chunks}...")
-            progress_bar.progress(i / total_chunks)
+            status.info(f"Analyzing Part {i+1} of {total_chunks}...")
+            progress.progress(i / total_chunks)
             
-            start_time = i * chunk_length_ms
-            end_time = min((i + 1) * chunk_length_ms, len(audio))
-            chunk = audio[start_time:end_time]
+            chunk = audio[i*chunk_ms : min((i+1)*chunk_ms, len(audio))]
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as c_tmp:
+                chunk.export(c_tmp.name, format="mp3")
+                c_path = c_tmp.name
             
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as chunk_temp:
-                chunk.export(chunk_temp.name, format="mp3")
-                chunk_path = chunk_temp.name
-            
-            audio_file = client.files.upload(file=chunk_path)
-            
-            chunk_prompt = "You are a transcriber. Please listen to this portion of a larger meeting. Provide a highly exhaustive summary of every topic discussed, every data point mentioned, and every task assigned in this specific chunk."
-            
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=[chunk_prompt, audio_file],
-                config=types.GenerateContentConfig(temperature=0.2)
+            g_file = client.files.upload(file=c_path)
+            res = client.models.generate_content(
+                model='gemini-2.0-flash', # Use the latest flash model
+                contents=["Exhaustively transcribe and summarize this part of the meeting.", g_file]
             )
-            
-            all_summaries.append(response.text)
-            
-            client.files.delete(name=audio_file.name)
-            os.remove(chunk_path)
-            
-        progress_bar.progress(0.9)
-        status_text.info("Synthesizing all parts into the final Official Minutes...")
-        
-        combined_text = "\n\n--- NEXT PART OF MEETING ---\n\n".join(all_summaries)
-        final_prompt = f"{PROFESSIONAL_PROMPT}\n\nHere are the detailed notes from each part of the meeting. Synthesize them into ONE cohesive, perfectly formatted final document:\n\n{combined_text}"
-        
-        final_response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=final_prompt,
-            config=types.GenerateContentConfig(temperature=0.2)
-        )
-        
-        progress_bar.progress(1.0)
-        status_text.success("Enterprise analysis complete!")
-        return final_response.text
+            all_chunks_text.append(res.text)
+            client.files.delete(name=g_file.name)
+            os.remove(c_path)
 
-    except Exception as e:
-        st.error(f"System Error: {e}")
-        return None
+        status.info("Synthesizing Final Detailed Minutes...")
+        combined = "\n\n".join(all_chunks_text)
+        final = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=f"{PROFESSIONAL_PROMPT}\n\nNotes:\n{combined}"
+        )
+        progress.progress(1.0)
+        return final.text
     finally:
-        if os.path.exists(temp_audio_path):
-            os.remove(temp_audio_path)
+        if os.path.exists(tmp_path): os.remove(tmp_path)
 
-def process_text_with_gemini(text_content):
-    try:
-        full_prompt = f"{PROFESSIONAL_PROMPT}\n\nTranscript to analyze:\n{text_content}"
-        
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=full_prompt,
-            config=types.GenerateContentConfig(temperature=0.2)
-        )
-        return response.text
-    except Exception as e:
-        st.error(f"System Error: {e}")
-        return None
+# --- UI CONFIG ---
+st.set_page_config(page_title="Minutes AI", layout="centered")
 
-# --- UI Configuration & Styling ---
-st.set_page_config(page_title="Enterprise Meeting Summarizer", layout="centered", page_icon="📄")
-
-# Forced Dark Mode with Yellow Accents CSS
 st.markdown("""
     <style>
-    /* Force dark background if config.toml failed */
-    .stApp { background-color: #0F172A; color: #F8FAFC; font-family: 'Inter', 'Segoe UI', sans-serif; }
-    
-    /* Headers */
-    .main-header { font-weight: 700; font-size: 2.75rem; color: #F8FAFC; margin-bottom: 0px; letter-spacing: -0.025em; }
-    .sub-header { font-size: 1.15rem; color: #94A3B8; margin-bottom: 2.5rem; line-height: 1.6; }
-    
-    /* File Uploader */
-    [data-testid="stFileUploadDropzone"] { background-color: #1E293B !important; border: 2px dashed #475569 !important; border-radius: 8px; padding: 2rem; }
-    [data-testid="stFileUploadDropzone"]:hover { border-color: #FACC15 !important; }
-    
-    /* Main Generate Button - Forced Yellow */
-    div.stButton > button:first-child { 
-        background-color: #FACC15 !important; 
-        color: #0F172A !important; 
-        font-weight: 700 !important; 
-        border-radius: 6px !important; 
-        border: none !important; 
-        padding: 0.5rem 2rem !important; 
-    }
-    div.stButton > button:first-child:hover { background-color: #EAB308 !important; }
-    
-    /* Download Buttons */
-    .stDownloadButton button { border-radius: 6px !important; font-weight: 500 !important; width: 100% !important; color: #F8FAFC !important; border: 1px solid #475569 !important; background-color: transparent !important; }
-    .stDownloadButton button:hover { border-color: #FACC15 !important; color: #FACC15 !important; }
-    
-    /* Document Card Output - Dark mode with Yellow Top Bar */
-    .document-card { 
-        background-color: #1E293B; 
-        border: 1px solid #334155; 
-        border-top: 4px solid #FACC15; /* Yellow Accent Line */
-        border-radius: 8px; 
-        padding: 2rem; 
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); 
-        margin-top: 2rem; 
-        margin-bottom: 2rem; 
-        color: #E2E8F0; 
-    }
+    .stApp { background-color: #0F172A; color: #F8FAFC; }
+    .main-header { font-weight: 700; font-size: 2.5rem; color: #F8FAFC; }
+    [data-testid="stFileUploadDropzone"] { background-color: #1E293B !important; border: 2px dashed #475569 !important; }
+    div.stButton > button { background-color: #FACC15 !important; color: #0F172A !important; font-weight: 700; width: 100%; }
+    .document-card { background-color: #1E293B; border-top: 4px solid #FACC15; padding: 20px; border-radius: 8px; margin: 10px 0; }
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] { background-color: #1E293B; border-radius: 4px; color: white; padding: 10px 20px; }
+    .stTabs [aria-selected="true"] { background-color: #FACC15 !important; color: #0F172A !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# Initialize Session State
-if "meeting_docs" not in st.session_state:
-    st.session_state.meeting_docs = None
+st.markdown('<div class="main-header">Minutes AI: Dual Mode</div>', unsafe_allow_html=True)
+st.write("Upload audio to generate both **Detailed Minutes** and a **Concise Flash Report**.")
 
-st.markdown('<div class="main-header">Enterprise Meeting Summarizer</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Upload an audio recording or transcript to generate boardroom-ready meeting minutes.</div>', unsafe_allow_html=True)
+# Session State Init
+if "detailed" not in st.session_state: st.session_state.detailed = None
+if "concise" not in st.session_state: st.session_state.concise = None
 
-uploaded_file = st.file_uploader("Select File", type=['txt', 'mp3', 'wav', 'm4a'], label_visibility="collapsed")
+uploaded_file = st.file_uploader("Upload Audio", type=['mp3', 'wav', 'm4a'], label_visibility="collapsed")
 
-if uploaded_file is not None:
-    # Render the Generate button
-    if st.button("Generate Minutes"):
-        file_extension = uploaded_file.name.split('.')[-1].lower()
-        
-        if file_extension == 'txt':
-            transcript_text = uploaded_file.read().decode("utf-8")
-            with st.spinner("Drafting official minutes..."):
-                st.session_state.meeting_docs = process_text_with_gemini(transcript_text)
-            
-        elif file_extension in ['mp3', 'wav', 'm4a']:
-            st.session_state.meeting_docs = process_audio_with_gemini(uploaded_file)
+if uploaded_file and st.button("Generate Both Documents"):
+    det = process_audio_to_detailed(uploaded_file)
+    if det:
+        st.session_state.detailed = det
+        with st.spinner("Synthesizing Concise Version..."):
+            con = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=f"{CONCISE_PROMPT}\n\nDetailed Source:\n{det}"
+            )
+            st.session_state.concise = con.text
+        st.success("Generation Complete!")
 
-# Display Results if they exist in Session State
-if st.session_state.meeting_docs:
-    st.markdown('<div class="document-card">', unsafe_allow_html=True)
-    st.markdown(st.session_state.meeting_docs)
-    st.markdown('</div>', unsafe_allow_html=True)
+# RESULTS VIEW
+if st.session_state.detailed:
+    tab1, tab2 = st.tabs(["Detailed Minutes", "Concise Flash Report"])
     
-    st.markdown("### Export Options")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.download_button(
-            label="Download TXT",
-            data=st.session_state.meeting_docs,
-            file_name="Meeting_Minutes.txt",
-            mime="text/plain"
-        )
-        
-    with col2:
-        docx_data = create_docx(st.session_state.meeting_docs)
-        st.download_button(
-            label="Download Word",
-            data=docx_data,
-            file_name="Meeting_Minutes.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
-        
-    with col3:
-        pdf_data = create_pdf(st.session_state.meeting_docs)
-        st.download_button(
-            label="Download PDF",
-            data=pdf_data,
-            file_name="Meeting_Minutes.pdf",
-            mime="application/pdf"
-        )
+    with tab1:
+        st.markdown('<div class="document-card">', unsafe_allow_html=True)
+        st.markdown(st.session_state.detailed)
+        st.markdown('</div>', unsafe_allow_html=True)
+        col1, col2 = st.columns(2)
+        col1.download_button("Download Detailed (PDF)", create_pdf(st.session_state.detailed, "Detailed Minutes"), "Detailed_Minutes.pdf")
+        col2.download_button("Download Detailed (Word)", create_docx(st.session_state.detailed, "Detailed Minutes"), "Detailed_Minutes.docx")
+
+    with tab2:
+        st.markdown('<div class="document-card" style="border-top-color: #EAB308;">', unsafe_allow_html=True)
+        st.markdown(st.session_state.concise)
+        st.markdown('</div>', unsafe_allow_html=True)
+        col1, col2 = st.columns(2)
+        col1.download_button("Download Concise (PDF)", create_pdf(st.session_state.concise, "Flash Report"), "Flash_Report.pdf")
+        col2.download_button("Download Concise (Word)", create_docx(st.session_state.concise, "Flash Report"), "Flash_Report.docx")
