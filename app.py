@@ -118,12 +118,72 @@ def get_audio_summary(file_obj):
 # --- UI CONFIG ---
 st.set_page_config(page_title="Minutes AI Pro", layout="centered")
 
+# --- UI CONFIG ---
+st.set_page_config(page_title="Minutes AI Pro", layout="centered")
+
 st.markdown("""
     <style>
+    /* Main App Background */
     .stApp { background-color: #0F172A; color: #F8FAFC; }
-    div.stButton > button { background-color: #FACC15 !important; color: #0F172A !important; font-weight: 700; width: 100%; border: none; padding: 10px; }
-    .document-card { background-color: #1E293B; border-top: 4px solid #FACC15; padding: 25px; border-radius: 8px; margin: 15px 0; color: #E2E8F0; }
-    .stTabs [aria-selected="true"] { background-color: #FACC15 !important; color: #0F172A !important; font-weight: bold; }
+    
+    /* Buttons */
+    div.stButton > button { 
+        background-color: #FACC15 !important; 
+        color: #0F172A !important; 
+        font-weight: 700; 
+        width: 100%; 
+        border: none; 
+        padding: 10px; 
+        border-radius: 8px;
+    }
+    
+    /* Clean Tab Styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 24px;
+        background-color: transparent;
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        background-color: transparent !important;
+        border: none !important;
+        color: #94A3B8 !important; /* Muted text for inactive tabs */
+        font-weight: 400;
+        font-size: 16px;
+    }
+
+    /* Selected Tab - Simple Yellow Underline */
+    .stTabs [aria-selected="true"] {
+        color: #FACC15 !important;
+        font-weight: 700 !important;
+        border-bottom: 2px solid #FACC15 !important;
+    }
+
+    /* Remove the default long yellow bar underline */
+    .stTabs [data-baseweb="tab-highlight"] {
+        background-color: transparent !important;
+    }
+
+    /* Document Card */
+    .document-card { 
+        background-color: #1E293B; 
+        border: 1px solid #334155;
+        padding: 25px; 
+        border-radius: 12px; 
+        margin-top: 10px;
+        color: #E2E8F0; 
+        line-height: 1.6;
+    }
+    
+    /* Download Buttons Styling */
+    .stDownloadButton button {
+        background-color: transparent !important;
+        color: #FACC15 !important;
+        border: 1px solid #FACC15 !important;
+    }
+    .stDownloadButton button:hover {
+        background-color: rgba(250, 204, 21, 0.1) !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -170,7 +230,7 @@ if uploaded_files and st.button("Merge & Generate Minutes"):
 
 # UI DISPLAY
 if st.session_state.detailed:
-    t1, t2 = st.tabs(["📄 Detailed Master Minutes", "⚡ Executive Flash Report"])
+    t1, t2 = st.tabs(["Detailed Master Minutes", "Executive Flash Report"])
     
     with t1:
         st.markdown('<div class="document-card">', unsafe_allow_html=True)
