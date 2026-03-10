@@ -6,6 +6,7 @@ import math
 from datetime import datetime
 from docx import Document
 from fpdf import FPDF
+from PyPDF2 import PdfReader
 from dotenv import load_dotenv
 from pydub import AudioSegment
 from google import genai
@@ -45,136 +46,131 @@ List all formal decisions and agreements reached.
 List any topics tabled for future meetings, or the agreed-upon date for the next follow-up.
 """)
 
-# --- THE FIX: HARDENED PDF EXPORTER ---
+# --- MULTI-MEDIUM PARSERS ---
+
+def extract_text_from_pdf(file_obj):
+    reader = PdfReader(file_obj)
+    return "\n".join([page.extract_text() for page in reader.pages])
+
+def extract_text_from_docx(file_obj):
+    doc = Document(file_obj)
+    return "\n".join([para.text for para in doc.paragraphs])
+
+def process_audio(file_obj):
+    ext = file_obj.name.split('.')[-1].lower()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as tmp:
+        tmp.write(file_obj.read())
+        path = tmp.name
+    try:
+        audio = AudioSegment.from_file(path)
+        chunk_ms = 45 * 60 * 1000 
+        chunks_count = math.ceil(len(audio) / chunk_ms)
+        summaries = []
+        for i in range(chunks_count):
+            chunk = audio[i*chunk_ms : min((i+1)*chunk_ms, len(audio))]
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as c_tmp:
+                chunk.export(c_tmp.name, format="mp3")
+                g_file = client.files.upload(file=c_tmp.name)
+                res = client.models.generate_content(
+                    model=GEMINI_MODEL,
+                    contents=["Summarize this meeting audio segment in detail.", g_file]
+                )
+                summaries.append(res.text)
+                client.files.delete(name=g_file.name)
+        return "\n".join(summaries)
+    finally:
+        if os.path.exists(path): os.remove(path)
+
+# --- HARDENED EXPORT ENGINES ---
+
 def create_pdf(text, title="Official Document"):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    
-    # Title Header
     pdf.set_font("Helvetica", 'B', 16)
     pdf.cell(190, 10, title, ln=True, align='C')
     pdf.ln(10)
-
-    # Sanitize for PDF compatibility (Latin-1)
+    # Sanitize & Strip Markdown to fix truncation/fragmentation errors
     text = text.replace('‘', "'").replace('’', "'").replace('“', '"').replace('”', '"').replace('–', '-')
     text = "".join(i for i in text if ord(i) < 256)
-
     pdf.set_font("Helvetica", size=11)
-    
     for line in text.split('\n'):
-        line = line.strip()
+        line = line.strip().replace('**', '').replace('#', '')
         if not line:
             pdf.ln(4)
             continue
-        
-        # STRIP MARKDOWN: This prevents the 'fragmented line' error 
-        # that caused words like 'syste' and 'accu' to cut off.
-        clean_line = line.replace('**', '').replace('#', '').strip()
-        
-        if clean_line:
-            try:
-                # multi_cell(w=190) forces the text to wrap inside the page margins
-                pdf.multi_cell(w=190, h=7, txt=clean_line, border=0, align='L')
-            except:
-                continue
-                
+        try:
+            pdf.multi_cell(w=190, h=7, txt=line, border=0, align='L')
+        except: continue
     return bytes(pdf.output())
 
 def create_docx(text, title="Meeting Minutes"):
     doc = Document()
     doc.add_heading(title, 0)
     for line in text.split('\n'):
-        line = line.strip()
-        if line:
-            doc.add_paragraph(line.replace('**', '').replace('#', '').strip())
+        line = line.strip().replace('**', '').replace('#', '')
+        if line: doc.add_paragraph(line)
     bio = io.BytesIO()
     doc.save(bio)
     return bio.getvalue()
 
-def create_txt(text):
-    return text.replace('**', '').replace('# ', '').encode('utf-8')
-
-# --- UI CONFIG & CSS ---
+# --- UI CONFIG & STYLING ---
 st.set_page_config(page_title="Minutes AI Pro", layout="centered")
 
 st.markdown(f"""
     <style>
     .stApp {{ background-color: #0F172A; color: #F8FAFC; }}
-    
-    /* Remove ghost UI artifacts */
     [data-testid="stVerticalBlock"] > div:empty {{ display: none !important; }}
-
     div.stButton > button {{ 
-        background-color: #FACC15 !important; 
-        color: #0F172A !important; 
+        background-color: #FACC15 !important; color: #0F172A !important; 
         font-weight: 700; width: 100%; border-radius: 8px; padding: 12px;
     }}
-    
-    .stTabs [data-baseweb="tab-list"] {{ border-bottom: 1px solid #334155; }}
     .stTabs [aria-selected="true"] {{ color: #FACC15 !important; border-bottom: 2px solid #FACC15 !important; }}
-
-    .document-card {{ 
-        background-color: #1E293B; 
-        padding: 2.5rem; 
-        border-radius: 12px; 
-        margin-top: 1rem;
-        color: #E2E8F0; 
-        line-height: 1.6;
-    }}
+    .document-card {{ background-color: #1E293B; padding: 2.5rem; border-radius: 12px; margin-top: 1rem; color: #E2E8F0; line-height: 1.6; }}
     </style>
 """, unsafe_allow_html=True)
 
-# --- APP INTERFACE ---
-st.title("Minutes AI: Document Synthesis")
+st.title("Minutes AI: Multi-Medium Synthesis")
 st.write(f"Meeting Date: **{current_date_str}**")
 
 if "detailed" not in st.session_state: st.session_state.detailed = None
 if "concise" not in st.session_state: st.session_state.concise = None
 
-files = st.file_uploader("Upload Notes (TXT)", type=['txt'], accept_multiple_files=True)
+# Support for Audio, Text, PDF, and Word
+uploaded_files = st.file_uploader("Upload Audio, TXT, PDF, or DOCX", 
+                                  type=['mp3', 'wav', 'm4a', 'txt', 'pdf', 'docx'], 
+                                  accept_multiple_files=True)
 
-if files and st.button("Generate Both Documents"):
+if uploaded_files and st.button("Generate Master Report"):
     all_context = []
-    for f in files:
-        all_context.append(f.read().decode("utf-8"))
+    for f in uploaded_files:
+        with st.spinner(f"Reading {f.name}..."):
+            if f.name.endswith('.txt'):
+                all_context.append(f.read().decode("utf-8"))
+            elif f.name.endswith('.pdf'):
+                all_context.append(extract_text_from_pdf(f))
+            elif f.name.endswith('.docx'):
+                all_context.append(extract_text_from_docx(f))
+            else:
+                all_context.append(process_audio(f))
     
-    with st.spinner("Synthesizing..."):
-        # MANDATORY DATE INJECTION to fix [Current Date] error
-        date_instr = f"MANDATORY: Use '{current_date_str}' as the meeting date in all headers."
-        
-        # Pass 1: Detailed
-        res_det = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=[date_instr, PROFESSIONAL_PROMPT, "\n\n".join(all_context)]
-        )
+    with st.spinner("Synthesizing final documents..."):
+        date_instr = f"MANDATORY: Today is {current_date_str}. Replace [Current Date] with this value."
+        res_det = client.models.generate_content(model=GEMINI_MODEL, contents=[date_instr, PROFESSIONAL_PROMPT, "\n\n".join(all_context)])
         st.session_state.detailed = res_det.text
-        
-        # Pass 2: Concise
-        res_con = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=[date_instr, CONCISE_PROMPT, res_det.text]
-        )
+        res_con = client.models.generate_content(model=GEMINI_MODEL, contents=[date_instr, CONCISE_PROMPT, res_det.text])
         st.session_state.concise = res_con.text
     st.success("Analysis Complete!")
 
-# --- DISPLAY WITH TOP EXPORT BUTTONS ---
+# --- DISPLAY WITH TOP BUTTONS ---
 if st.session_state.detailed:
     t1, t2 = st.tabs(["Detailed Minutes", "Executive Flash Report"])
-    
-    with t1:
-        # Buttons at top for quick access
-        c1, c2, c3 = st.columns(3)
-        c1.download_button("Download PDF", create_pdf(st.session_state.detailed, "Detailed Minutes"), "Detailed.pdf", key="d_pdf")
-        c2.download_button("Download Word", create_docx(st.session_state.detailed, "Detailed Minutes"), "Detailed.docx", key="d_word")
-        c3.download_button("Download Text", create_txt(st.session_state.detailed), "Detailed.txt", key="d_txt")
-        
-        st.markdown(f'<div class="document-card">{st.session_state.detailed}</div>', unsafe_allow_html=True)
-
-    with t2:
-        c1, c2, c3 = st.columns(3)
-        c1.download_button("Download PDF", create_pdf(st.session_state.concise, "Flash Report"), "FlashReport.pdf", key="c_pdf")
-        c2.download_button("Download Word", create_docx(st.session_state.concise, "Flash Report"), "FlashReport.docx", key="c_word")
-        c3.download_button("Download Text", create_txt(st.session_state.concise), "FlashReport.txt", key="c_txt")
-        
-        st.markdown(f'<div class="document-card">{st.session_state.concise}</div>', unsafe_allow_html=True)
+    for tab, content, title, key_prefix in zip([t1, t2], 
+                                               [st.session_state.detailed, st.session_state.concise], 
+                                               ["Detailed Minutes", "Flash Report"], ["d", "c"]):
+        with tab:
+            c1, c2, c3 = st.columns(3)
+            c1.download_button("PDF", create_pdf(content, title), f"{title}.pdf", key=f"{key_prefix}_p")
+            c2.download_button("Word", create_docx(content, title), f"{title}.docx", key=f"{key_prefix}_w")
+            c3.download_button("Text", content.encode('utf-8'), f"{title}.txt", key=f"{key_prefix}_t")
+            st.markdown(f'<div class="document-card">{content}</div>', unsafe_allow_html=True)
