@@ -20,33 +20,43 @@ current_date_val = datetime.now().strftime("%B %d, %Y")
 
 # Fetch the system prompt from the .env file
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-CONCISE_PROMPT = os.getenv("CONCISE_PROMPT", "You are a Chief of Staff. Summarize the following meeting notes into a 'Flash Report'. Focus only on the 3 most critical outcomes, the 5 most urgent action items, and any major blockers. Keep it under 300 words. Use bullet points for readability.")
-PROFESSIONAL_PROMPT = os.getenv("PROFESSIONAL_PROMPT", """
-You are a Senior Corporate Secretary. Your task is to listen to the provided meeting audio/transcript and generate exhaustive, professional meeting minutes. 
-Do not leave out any discussed topics. Capture the nuance, data points, and different perspectives shared.
 
-Please format the document strictly using the following structure:
+CONCISE_PROMPT = os.getenv("CONCISE_PROMPT", """You are a Chief of Staff. Summarize these notes into a 'Flash Report'. Focus on the 3 most critical outcomes, the 5 most urgent action items, and major blockers. Keep it under 300 words.
 
+MANDATORY DATE: [Insert Today's Date]
+
+FLEXIBLE STRUCTURE RULE:
+You may rename or create new headings if they more accurately reflect the urgency or nature of the specific meeting.
+
+MANDATORY EXPORT FORMATTING:
+1. CLEAN EXPORT: Use only plain text and simple bullets (-). No tables or bolding inside text blocks.
+2. PDF ALIGNMENT: Ensure no line is excessively long; use standard spacing to ensure the PDF export is clean and fully readable without truncation.
+
+Default Structure:
+# Executive Flash Report
+## I. Key Strategic Outcomes
+## II. Urgent Actions
+## III. Critical Blockers""")
+
+PROFESSIONAL_PROMPT = os.getenv("PROFESSIONAL_PROMPT", """You are a Senior Corporate Secretary. Your task is to generate exhaustive, professional meeting minutes. Capture the nuance, data points, and all perspectives shared.
+
+MANDATORY DATE: [Insert Today's Date]
+
+FLEXIBLE STRUCTURE RULE: 
+If the structure below does not fit the flow of the specific meeting, you are AUTHORIZED and encouraged to generate your own logical headings and sub-headings that best organize the information discussed. 
+
+MANDATORY EXPORT FORMATTING:
+1. UNIVERSAL COMPATIBILITY: No Markdown tables, nested columns, or complex symbols.
+2. PDF/WORD SAFETY: Use plain text with simple bullet points (-) only. Do NOT use bolding (**) or italics (*) within sentences, as these break the PDF rendering engine and cause text truncation.
+3. TEXT WRAPPING: Use clear line breaks and keep paragraphs concise so text wraps correctly in PDF/Word without cutting off at the margins.
+
+Default Structure (Adapt as needed):
 # Official Meeting Minutes
-
 ## 1. Executive Summary
-Provide a concise, high-level summary (3-4 sentences) of the meeting's primary objective and overall outcome.
-
-## 2. Detailed Discussion Points
-Break down *every* topic discussed in the meeting. For each topic, include:
-* Context: What was the issue/topic?
-* Key Arguments/Perspectives: What were the different viewpoints shared?
-* Data/Metrics: Include any specific numbers, dates, or financial figures.
-
+## 2. Detailed Discussion Points (Create custom sub-headings based on topics)
 ## 3. Key Decisions Made
-List all formal decisions and agreements reached.
-
-## 4. Action Items
-* Task Description - Assigned to: Name | Deadline: Date
-
-## 5. Parking Lot / Next Steps
-List any topics tabled for future meetings, or the agreed-upon date for the next follow-up.
-""")
+## 4. Action Items (Task | Owner | Deadline)
+## 5. Next Steps / Follow-up""")
 
 # --- PARSERS FOR MULTIPLE MEDIUMS ---
 
