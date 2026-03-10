@@ -168,7 +168,7 @@ if uploaded_files and st.button("Generate Both Documents"):
         # 1. Detailed Minutes
         res_det = client.models.generate_content(
             model=GEMINI_MODEL,
-            contents=[date_instr, PROF_PROMPT, "\n\n".join(all_context)]
+            contents=[date_instr, PROFESSIONAL_PROMPT, "\n\n".join(all_context)]
         )
         st.session_state.detailed = res_det.text
         
